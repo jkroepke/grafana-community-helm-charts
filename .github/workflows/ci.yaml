@@ -162,7 +162,7 @@ jobs:
         run: |
           COUNT=$(echo "$CHANGED_LIST" | wc -w)
           if [ "$COUNT" -gt 1 ]; then
-            echo "Error: Multiple charts changed ($COUNT). Please create separate PRs for each chart."
+            echo "Error: Multiple charts changed ($COUNT). Please create separate PRs for each chart." >&2
             exit 1
           fi
         env:
