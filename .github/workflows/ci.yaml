@@ -160,7 +160,7 @@ jobs:
       - name: check for multiple chart changes
         if: steps.list-changed.outputs.changed == 'true'
         run: |
-          COUNT=$(echo $CHANGED_LIST | wc -w)
+          COUNT=$(echo "$CHANGED_LIST" | wc -w)
           if [ "$COUNT" -gt 1 ]; then
             echo "Error: Multiple charts changed ($COUNT). Please create separate PRs for each chart."
             exit 1
