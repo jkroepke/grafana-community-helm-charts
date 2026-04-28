@@ -4,7 +4,8 @@ Workload helper
 
 {{- define "loki.component" -}}
 {{- include "loki.component.workload" . }}
-{{- if eq .component.kind "StatefulSet" }}
+{{- if and .ctx.Release.IsUpgrade (eq .component.kind "StatefulSet") }}
+---
 {{- include "loki.component.workload.recreate" . }}
 {{- end }}
 {{- end }}
@@ -19,7 +20,6 @@ Workload helper
 {{- $memberlist := hasKey . "memberlist" | ternary .memberlist true -}}
 {{- with $ctx }}
 {{- if $component.enabled }}
----
 apiVersion: apps/v1
 kind: {{ $component.kind }}
 metadata:
@@ -146,7 +146,7 @@ spec:
 {{- $name := .name }}
 {{- $headlessName := .headlessName }}
 {{- $memberlist := hasKey . "memberlist" | ternary .memberlist true -}}
-{{- if and $component.enabled $component.persistence.enabled $component.persistence.statefulSetPatchJob.enabled .Values.statefulSetPatchJob.enabled -}}
+{{- if and $component.enabled $component.statefulSetRecreateJob.enabled -}}
 {{- $newStatefulSet := include "loki.component.workload" . | fromYaml -}}
 {{- with $ctx }}
   {{- $currentStatefulset := dict -}}
@@ -157,21 +157,22 @@ spec:
     {{- if and $currentStatefulset (eq $currentStatefulset.metadata.name $newStatefulSet.metadata.name) -}}
       {{- if ne (len $newStatefulSet.spec.volumeClaimTemplates) (len $currentStatefulset.spec.volumeClaimTemplates) -}}
         {{- $needsRecreation = true -}}
-      {{- end -}}
-      {{- range $index, $newVolumeClaimTemplate := $newStatefulSet.spec.volumeClaimTemplates -}}
-        {{- $currentVolumeClaimTemplateSpec := dict -}}
-          {{- range $oldVolumeClaimTemplate := $currentStatefulset.spec.volumeClaimTemplates -}}
-            {{- if eq $oldVolumeClaimTemplate.metadata.name $newVolumeClaimTemplate.metadata.name -}}
-              {{- $currentVolumeClaimTemplateSpec = $oldVolumeClaimTemplate.spec -}}
+      {{- else -}}
+        {{- range $index, $newVolumeClaimTemplate := $newStatefulSet.spec.volumeClaimTemplates -}}
+          {{- $currentVolumeClaimTemplateSpec := dict -}}
+            {{- range $oldVolumeClaimTemplate := $currentStatefulset.spec.volumeClaimTemplates -}}
+              {{- if eq $oldVolumeClaimTemplate.metadata.name $newVolumeClaimTemplate.metadata.name -}}
+                {{- $currentVolumeClaimTemplateSpec = $oldVolumeClaimTemplate.spec -}}
+              {{- end -}}
             {{- end -}}
-          {{- end -}}
-        {{- $newVolumeClaimTemplateStorageSize := $newVolumeClaimTemplate.spec.resources.requests.storage -}}
-        {{- if not $currentVolumeClaimTemplateSpec -}}
-          {{- $needsRecreation = true -}}
-        {{- else -}}
-          {{- if ne $newVolumeClaimTemplateStorageSize $currentVolumeClaimTemplateSpec.resources.requests.storage -}}
+          {{- $newVolumeClaimTemplateStorageSize := $newVolumeClaimTemplate.spec.resources.requests.storage -}}
+          {{- if not $currentVolumeClaimTemplateSpec -}}
             {{- $needsRecreation = true -}}
-            {{- $templates = set $templates $newVolumeClaimTemplate.metadata.name $newVolumeClaimTemplateStorageSize -}}
+          {{- else -}}
+            {{- if ne $newVolumeClaimTemplateStorageSize $currentVolumeClaimTemplateSpec.resources.requests.storage -}}
+              {{- $needsRecreation = true -}}
+              {{- $templates = set $templates $newVolumeClaimTemplate.metadata.name $newVolumeClaimTemplateStorageSize -}}
+            {{- end -}}
           {{- end -}}
         {{- end -}}
       {{- end -}}
@@ -180,11 +181,11 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ $newStatefulSet.metadata.name }}-recreate
-  namespace: {{ $newStatefulSet.metadata.namespace }}
+  name: "{{ $newStatefulSet.metadata.name }}-recreate"
+  namespace: "{{ $newStatefulSet.metadata.namespace }}"
   labels:
     {{- include "loki.labels" . | nindent 4 }}
-    app.kubernetes.io/component: {{ $target }}-recreate-job
+    app.kubernetes.io/component: "{{ $target }}-recreate-job"
   annotations:
     "helm.sh/hook": pre-upgrade
     "helm.sh/hook-weight": "-5"
@@ -200,10 +201,11 @@ spec:
       restartPolicy: Never
       serviceAccountName: {{ $newStatefulSet.metadata.name }}-recreate
       initContainers:
-        {{- range $index := until (int $currentStatefulset.spec.replicas) }}
-          {{- range $template, $size := $templates }}
+        {{- if $ctx.Values.defaults.statefulSetRecreateJob.patchPVC }}
+          {{- range $index := until (int $currentStatefulset.spec.replicas) }}
+            {{- range $template, $size := $templates }}
         - name: patch-pvc-{{ $template }}-{{ $index }}
-          image: {{ include "loki.image" (dict "service" .Values.statefulSetPatchJob.image "global" $.Values.global) }}
+          image: {{ include "loki.image" (dict "component" $ctx.Values.defaults.statefulSetRecreateJob.image "global" $ctx.Values.global "defaultVersion" $ctx.Capabilities.KubeVersion.Version) }}
           args:
             - patch
             - pvc
@@ -211,11 +213,12 @@ spec:
             - {{ printf "%s-%s-%d" $template $newStatefulSet.metadata.name $index }}
             - --type=json
             - '-p=[{"op": "replace", "path": "/spec/resources/requests/storage", "value": "{{ $size }}"}]'
+            {{- end }}
           {{- end }}
         {{- end }}
       containers:
-        - name: recreate-statefulset
-          image: {{ include "loki.image" (dict "service" (dict "registry" "docker.io" "repository" "rancher/kubectl" "tag" (.Capabilities.KubeVersion.Version | default "v1.33.0")) "global" .Values.global) }}
+        - name: recreate
+          image: {{ include "loki.image" (dict "component" $ctx.Values.defaults.statefulSetRecreateJob.image "global" $ctx.Values.global "defaultVersion" $ctx.Capabilities.KubeVersion.Version) }}
           args:
             - delete
             - statefulset
