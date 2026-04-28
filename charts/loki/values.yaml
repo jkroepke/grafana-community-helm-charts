@@ -162,6 +162,12 @@ defaults:
       # -- Secret key references for TriggerAuthentication
       secretTargetRef: []
 
+statefulSetPatchJob:
+  image:
+    registry: docker.io
+    repository: rancher/kubectl
+    tag: '{{ $.Capabilities.KubeVersion.Version | default "v1.33.0") }}'
+
 ######################################################################################################################
 #
 # Base Loki Configs including kubernetes configurations and configurations for Loki itself,
