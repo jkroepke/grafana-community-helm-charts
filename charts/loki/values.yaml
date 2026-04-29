@@ -166,8 +166,8 @@ defaults:
     # will recreate the statefulset to allow resizing of PVCs, which is not natively supported by Kubernetes.
     patchPVC: true
     image:
-      registry: docker.io
-      repository: rancher/kubectl
+      registry: registry.k8s.io
+      repository: kubectl
       # -- Overrides the image tag. Defaults to .Capabilities.KubeVersion.Version
       tag: ''
 
