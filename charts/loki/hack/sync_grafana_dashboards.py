@@ -29,7 +29,7 @@ def change_style(style, representer):
 
 refs = {
     # renovate: github=docker.io/grafana/loki
-    'ref.loki': 'v3.7.0',
+    'ref.loki': 'v3.7.1',
 }
 
 # Source files list
@@ -37,7 +37,7 @@ charts = [
     {
         'git': 'https://github.com/grafana/loki.git',
         'branch': refs['ref.loki'],
-        'content': "(import 'dashboards.libsonnet') + (import 'config.libsonnet') + {_config+:: { per_cluster_label: '__CLUSTER_LABEL__', horizontally_scalable_compactor_enabled: false, internal_components: false, meta_monitoring+: { enabled: true }, promtail+: { enabled: false }, ssd+: { enabled: false, pod_prefix_matcher: 'loki.*' }}}",
+        'content': "(import 'dashboards.libsonnet') + (import 'config.libsonnet') + {_config+:: { horizontally_scalable_compactor_enabled: false, internal_components: false, meta_monitoring+: { enabled: true }, per_cluster_label: 'app_instance', promtail+: { enabled: false }, ssd+: { enabled: false, pod_prefix_matcher: 'loki.*' }}}",
         'cwd': 'production/loki-mixin',
         'destination': '../templates/monitoring/dashboards',
         'type': 'jsonnet_mixin',
@@ -49,12 +49,6 @@ charts = [
 # Additional conditions map
 condition_map = {}
 replacement_map = {
-    '__CLUSTER_LABEL__=~\\"$cluster\\"': {
-        'replacement': '`}}{{ required "monitoring.serviceMonitor.clusterLabelName must be set to a non-empty string when generating Loki dashboards with cluster label selectors" $.Values.monitoring.serviceMonitor.clusterLabelName }}{{`=~\\"|$cluster\\"',
-    },
-    '__CLUSTER_LABEL__': {
-        'replacement': '`}}{{ required "monitoring.serviceMonitor.clusterLabelName must be set to a non-empty string when generating Loki dashboards with cluster label selectors" $.Values.monitoring.serviceMonitor.clusterLabelName }}{{`',
-    },
     '($namespace)/(bloom-gateway': {
         'replacement': '($namespace)/(.*-bloom-gateway',
     },
@@ -128,7 +122,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: {{ include "loki.resourceName" (dict "ctx" $ "component" "dashboards" "suffix" "%(name)s") }}
-  namespace: {{ .Values.monitoring.dashboards.namespace | default (include "loki.namespace" $) }}
+  namespace: {{ .Values.monitoring.namespace | default (include "loki.namespace" $) }}
   labels:
     {{- include "loki.labels" $ | nindent 4 }}
     {{- with .Values.monitoring.dashboards.labels }}
@@ -149,7 +143,7 @@ apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaDashboard
 metadata:
   name: {{ include "loki.resourceName" (dict "ctx" $ "component" "dashboards" "suffix" "%(name)s") }}
-  namespace: {{ .Values.monitoring.dashboards.namespace | default (include "loki.namespace" $) }}
+  namespace: {{ .Values.monitoring.namespace | default (include "loki.namespace" $) }}
   {{- with (mergeOverwrite dict .Values.monitoring.dashboards.annotations .Values.monitoring.dashboards.grafanaOperator.annotations) }}
   annotations:
     {{- toYaml . | nindent 4 }}

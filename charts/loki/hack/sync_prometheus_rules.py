@@ -29,8 +29,10 @@ def change_style(style, representer):
 
 refs = {
     # renovate: github=docker.io/grafana/loki
-    'ref.loki': 'v3.7.0',
+    'ref.loki': 'v3.7.1',
 }
+
+_mixin_config = "per_cluster_label: 'app_instance', horizontally_scalable_compactor_enabled: false, internal_components: false, meta_monitoring+: { enabled: true }, promtail+: { enabled: false }, ssd+: { enabled: false, pod_prefix_matcher: 'loki.*' }"
 
 # Source files list
 charts = [
@@ -40,9 +42,21 @@ charts = [
         'source': 'mixin.libsonnet',
         'cwd': 'production/loki-mixin',
         'destination': '../templates/monitoring/rules',
+        'monitoring_path': 'monitoring.rules',
         'mixin': """
-        ((import 'recording_rules.libsonnet') + (import 'config.libsonnet') + {_config+:: { horizontally_scalable_compactor_enabled: false, internal_components: false, meta_monitoring+: { enabled: true }, promtail+: { enabled: false }, ssd+: { enabled: false, pod_prefix_matcher: 'loki.*' }}}).prometheusRules
-        """
+        ((import 'recording_rules.libsonnet') + (import 'config.libsonnet') + {_config+:: { %s }}).prometheusRules
+        """ % _mixin_config,
+    },
+    {
+        'git': 'https://github.com/grafana/loki.git',
+        'branch': refs['ref.loki'],
+        'source': 'mixin.libsonnet',
+        'cwd': 'production/loki-mixin',
+        'destination': '../templates/monitoring/alerts',
+        'monitoring_path': 'monitoring.alerts',
+        'mixin': """
+        ((import 'alerts.libsonnet') + (import 'config.libsonnet') + {_config+:: { %s }}).prometheusAlerts
+        """ % _mixin_config,
     },
 ]
 
@@ -59,18 +73,18 @@ Generated from '%(name)s' group from %(url)s
 Do not change in-place! In order to change this file first read following link:
 https://github.com/grafana-community/helm-charts/tree/main/charts/loki/hack
 */ -}}
-{{- if and .Values.monitoring.rules.enabled%(condition)s }}%(init_line)s
+{{- if and .Values.%(monitoring_path)s.enabled%(condition)s }}%(init_line)s
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
   name: {{ printf "%%s-%%s" (include "loki.fullname" .) "%(name)s" | trunc 63 | trimSuffix "-" }}
-  namespace: {{ .Values.monitoring.rules.namespace | default (include "loki.namespace" $) }}
+  namespace: {{ .Values.monitoring.namespace | default (include "loki.namespace" $) }}
   labels:
     {{- include "loki.labels" $ | nindent 4 }}
-    {{- with .Values.monitoring.rules.labels }}
+    {{- with .Values.%(monitoring_path)s.labels }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
-  {{- with .Values.monitoring.rules.annotations }}
+  {{- with .Values.%(monitoring_path)s.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
@@ -166,25 +180,29 @@ def add_rules_conditions_from_condition_map(rules, indent=4):
     return rules
 
 
-def add_rules_per_rule_conditions(rules, group, indent=4):
+def add_rules_per_rule_conditions(rules, group, indent=4, monitoring_path='monitoring.rules'):
     """Add if wrapper for rules, listed in alert_condition_map"""
     rules_condition_map = {}
     for rule in group['rules']:
         if 'alert' in rule:
-            rules_condition_map[rule['alert']] = f"not (.Values.defaultRules.disabled.{rule['alert']} | default false)"
+            rules_condition_map[rule['alert']] = f"not (.Values.{monitoring_path}.disabled.{rule['alert']} | default false)"
 
     rules = add_rules_conditions(rules, rules_condition_map, indent)
     return rules
 
 
-def add_custom_labels(rules_str, group, indent=4, label_indent=2):
+def add_custom_labels(rules_str, group, indent=4, label_indent=2, monitoring_path='monitoring.rules'):
     """Add if wrapper for additional rules labels"""
     rule_group_labels = get_rule_group_condition(condition_map.get(group['name'], ''), 'additionalRuleGroupLabels')
 
     additional_rule_labels = textwrap.indent("""
-{{- with .Values.monitoring.rules.additionalRuleLabels }}
+app_instance: "{{ tpl .Values.monitoring.serviceMonitor.appInstanceLabel $ }}"
+{{- if and .Values.monitoring.dashboards.multiCluster.enabled .Values.monitoring.dashboards.multiCluster.clusterName }}
+cluster: "{{ tpl .Values.monitoring.dashboards.multiCluster.clusterName $ }}"
+{{- end }}
+{{- with .Values.%s.additionalRuleLabels }}
   {{- toYaml . | nindent 8 }}
-{{- end }}""", " " * (indent + label_indent * 2))
+{{- end }}""" % monitoring_path, " " * (indent + label_indent * 2))
 
     additional_rule_labels_condition_start = ""
     additional_rule_labels_condition_end = ""
@@ -232,11 +250,11 @@ def add_custom_labels(rules_str, group, indent=4, label_indent=2):
     return head + "".join(rules) + "\n"
 
 
-def add_custom_annotations(rules, group, indent=4):
+def add_custom_annotations(rules, group, indent=4, monitoring_path='monitoring.rules'):
     """Add if wrapper for additional rules annotations"""
-    rule_condition = '{{- if .Values.defaultRules.additionalRuleAnnotations }}\n{{ toYaml .Values.defaultRules.additionalRuleAnnotations | indent 8 }}\n{{- end }}'
+    rule_condition = '{{- if .Values.%s.additionalRuleAnnotations }}\n{{ toYaml .Values.%s.additionalRuleAnnotations | indent 8 }}\n{{- end }}' % (monitoring_path, monitoring_path)
     rule_group_labels = get_rule_group_condition(condition_map.get(group['name'], ''), 'additionalRuleGroupAnnotations')
-    rule_group_condition = '\n{{- if %s }}\n{{ toYaml %s | indent 8 }}\n{{- end }}' % (rule_group_labels, rule_group_labels)
+    rule_group_condition = '\n{{- if %s }}\n{{ toYaml %s | indent 8 }}\n{{- end }}' % (rule_group_labels, rule_group_labels) if rule_group_labels else ''
     annotations = "      annotations:"
     annotations_len = len(annotations) + 1
     rule_condition_len = len(rule_condition) + 1
@@ -255,10 +273,10 @@ def add_custom_annotations(rules, group, indent=4):
     return rules
 
 
-def add_custom_keep_firing_for(rules, indent=4):
+def add_custom_keep_firing_for(rules, indent=4, monitoring_path='monitoring.rules'):
     """Add if wrapper for additional rules annotations"""
     indent_spaces = " " * indent + "  "
-    keep_firing_for = (indent_spaces + '{{- with .Values.defaultRules.keepFiringFor }}\n' +
+    keep_firing_for = (indent_spaces + '{{- with .Values.%s.keepFiringFor }}\n' % monitoring_path +
                         indent_spaces + 'keep_firing_for: "{{ . }}"\n' +
                         indent_spaces + '{{- end }}')
     keep_firing_for_len = len(keep_firing_for) + 1
@@ -276,23 +294,23 @@ def add_custom_keep_firing_for(rules, indent=4):
     return rules
 
 
-def add_custom_for(rules, indent=4):
+def add_custom_for(rules, indent=4, monitoring_path='monitoring.rules'):
     """Add custom 'for:' condition in rules"""
     replace_field = "for:"
-    rules = add_custom_alert_rules(rules, replace_field, indent)
+    rules = add_custom_alert_rules(rules, replace_field, indent, monitoring_path)
 
     return rules
 
 
-def add_custom_severity(rules, indent=4):
+def add_custom_severity(rules, indent=4, monitoring_path='monitoring.rules'):
     """Add custom 'severity:' condition in rules"""
     replace_field = "severity:"
-    rules = add_custom_alert_rules(rules, replace_field, indent)
+    rules = add_custom_alert_rules(rules, replace_field, indent, monitoring_path)
 
     return rules
 
 
-def add_custom_alert_rules(rules, key_to_replace, indent):
+def add_custom_alert_rules(rules, key_to_replace, indent, monitoring_path='monitoring.rules'):
     """Extend alert field to allow custom values"""
     key_to_replace_indented = ' ' * indent + key_to_replace
     alertkey_field = '- alert:'
@@ -323,7 +341,7 @@ def add_custom_alert_rules(rules, key_to_replace, indent):
                 word_after_key_to_replace = rules[start_index_key_value:end_index_key_to_replace]
                 new_key = key_to_replace_indented + ' {{ dig "' + alertname + \
                     '" "' + key_to_replace[:-1] + '" "' + \
-                    word_after_key_to_replace + '" .Values.customRules }}'
+                    word_after_key_to_replace + '" .Values.%s.overrides }}' % monitoring_path
                 updated_rules += new_key
                 i = end_index_key_to_replace
 
@@ -333,7 +351,7 @@ def add_custom_alert_rules(rules, key_to_replace, indent):
     return updated_rules
 
 
-def write_group_to_file(group, url, destination):
+def write_group_to_file(group, url, destination, monitoring_path='monitoring.rules'):
     fix_expr(group['rules'])
     group_name = group['name']
 
@@ -347,25 +365,26 @@ def write_group_to_file(group, url, destination):
             if replacement_map[line]['init']:
                 init_line += '\n' + replacement_map[line]['init']
     # append per-alert rules
-    rules = add_custom_labels(rules, group)
-    rules = add_custom_annotations(rules, group)
-    rules = add_custom_keep_firing_for(rules)
-    rules = add_custom_for(rules)
-    rules = add_custom_severity(rules)
+    rules = add_custom_labels(rules, group, monitoring_path=monitoring_path)
+    rules = add_custom_annotations(rules, group, monitoring_path=monitoring_path)
+    rules = add_custom_keep_firing_for(rules, monitoring_path=monitoring_path)
+    rules = add_custom_for(rules, monitoring_path=monitoring_path)
+    rules = add_custom_severity(rules, monitoring_path=monitoring_path)
     rules = add_rules_conditions_from_condition_map(rules)
-    rules = add_rules_per_rule_conditions(rules, group)
+    rules = add_rules_per_rule_conditions(rules, group, monitoring_path=monitoring_path)
     # initialize header
     lines = header % {
         'name': sanitize_name(group['name']),
         'url': url,
         'condition': condition_map.get(group['name'], ''),
-        'init_line': init_line
+        'init_line': init_line,
+        'monitoring_path': monitoring_path,
     }
 
     # rules themselves
     lines += re.sub(
         r'\s(by|on) ?\(',
-        r' \1 ({{ range $.Values.monitoring.rules.additionalAggregationLabels }}{{ . }},{{ end }}',
+        r' \1 ({{ range $.Values.%s.additionalAggregationLabels }}{{ . }},{{ end }}' % monitoring_path,
         rules,
         flags=re.IGNORECASE
     )
@@ -391,6 +410,8 @@ def main():
     init_yaml_styles()
     # read the rules, create a new template file per group
     for chart in charts:
+        monitoring_path = chart.get('monitoring_path', 'monitoring.rules')
+
         if 'git' in chart:
             if 'source' not in chart:
                 chart['source'] = '_mixin.jsonnet'
@@ -455,7 +476,7 @@ def main():
         # etcd workaround, their file don't have spec level
         groups = alerts['spec']['groups'] if alerts.get('spec') else alerts['groups']
         for group in groups:
-            write_group_to_file(group, url, chart['destination'])
+            write_group_to_file(group, url, chart['destination'], monitoring_path=monitoring_path)
 
     print("Finished")
 
