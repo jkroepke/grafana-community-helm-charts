@@ -8,7 +8,7 @@
   (and (not $folder) $folderUID (not $folderRef))
   (and (not $folder) (not $folderUID) $folderRef)
 )}}
-{{- fail "grafana.operator: only one of folder, folderUID, or folderRef must be set" }}
+{{- fail "monitoring.dashboards.grafanaOperator: only one of folder, folderUID, or folderRef must be set" }}
 {{- end }}
 {{- if $folder }}
 folder: {{ $folder | quote }}

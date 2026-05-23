@@ -5754,6 +5754,10 @@ monitoring:
   serviceMonitor:
     # -- If enabled, ServiceMonitor resources for Prometheus Operator are created
     enabled: false
+    # -- The name of the label to use for the cluster name in metrics.
+    # The default value may clash with existing labels in your environment,
+    # so it can be customized or disabled if necessary.
+    clusterLabelName: "cluster"
     # -- To disable setting a 'cluster' label in metrics, set to 'null'.
     # To overwrite the 'cluster' label with your own value, set to a non-empty string.
     # Keep empty string "" to have the default value in the 'cluster' label, which is the helm release name for Loki.

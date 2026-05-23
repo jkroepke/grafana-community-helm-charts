@@ -37,7 +37,7 @@ charts = [
     {
         'git': 'https://github.com/grafana/loki.git',
         'branch': refs['ref.loki'],
-        'content': "(import 'dashboards.libsonnet') + (import 'config.libsonnet') + {_config+:: { horizontally_scalable_compactor_enabled: false, internal_components: false, meta_monitoring+: { enabled: true }, promtail+: { enabled: false }, ssd+: { enabled: false, pod_prefix_matcher: 'loki.*' }}}",
+        'content': "(import 'dashboards.libsonnet') + (import 'config.libsonnet') + {_config+:: { per_cluster_label: '__CLUSTER_LABEL__', horizontally_scalable_compactor_enabled: false, internal_components: false, meta_monitoring+: { enabled: true }, promtail+: { enabled: false }, ssd+: { enabled: false, pod_prefix_matcher: 'loki.*' }}}",
         'cwd': 'production/loki-mixin',
         'destination': '../templates/monitoring/dashboards',
         'type': 'jsonnet_mixin',
@@ -49,53 +49,71 @@ charts = [
 # Additional conditions map
 condition_map = {}
 replacement_map = {
+    '__CLUSTER_LABEL__=~\\"$cluster\\"': {
+        'replacement': '`}}{{ required "monitoring.serviceMonitor.clusterLabelName must be set to a non-empty string when generating Loki dashboards with cluster label selectors" $.Values.monitoring.serviceMonitor.clusterLabelName }}{{`=~\\"|$cluster\\"',
+    },
+    '__CLUSTER_LABEL__': {
+        'replacement': '`}}{{ required "monitoring.serviceMonitor.clusterLabelName must be set to a non-empty string when generating Loki dashboards with cluster label selectors" $.Values.monitoring.serviceMonitor.clusterLabelName }}{{`',
+    },
     '($namespace)/(bloom-gateway': {
-        'replacement': '($namespace)/(loki.*-bloom-gateway',
+        'replacement': '($namespace)/(.*-bloom-gateway',
     },
     '($namespace)/(distributor': {
-        'replacement': '($namespace)/(loki.*-distributor',
+        'replacement': '($namespace)/(.*-distributor',
     },
     '($namespace)/(querier': {
-        'replacement': '($namespace)/(loki.*-querier',
+        'replacement': '($namespace)/(.*-querier',
     },
     '($namespace)/(index-gateway': {
-        'replacement': '($namespace)/(loki.*-index-gateway',
+        'replacement': '($namespace)/(.*-index-gateway',
     },
     '($namespace)/(query-frontend': {
-        'replacement': '($namespace)/(loki.*-query-frontend',
+        'replacement': '($namespace)/(.*-query-frontend',
     },
     '($namespace)/(partition-ingester.*|ingester.*': {
-        'replacement': '($namespace)/(loki.*-partition-ingester.*|loki.*-ingester.*',
+        'replacement': '($namespace)/(.*-partition-ingester.*|.*-ingester.*',
     },
     '($namespace)/(partition-ingester-.*|ingester-zone-.*': {
-        'replacement': '($namespace)/(loki.*-partition-ingester-.*|loki.*-ingester-zone-.*',
+        'replacement': '($namespace)/(.*-partition-ingester|.*-ingester',
+    },
+    'ingester-zone-.*': {
+        'replacement': '.*-ingester',
     },
     '($namespace)/bloom-gateway': {
-        'replacement': '($namespace)/loki.*-bloom-gateway',
+        'replacement': '($namespace)/.*-bloom-gateway',
     },
     '($namespace)/query-frontend': {
-        'replacement': '($namespace)/loki.*-query-frontend',
+        'replacement': '($namespace)/.*-query-frontend',
     },
     '($namespace)/query-scheduler': {
-        'replacement': '($namespace)/loki.*-query-scheduler',
+        'replacement': '($namespace)/.*-query-scheduler',
     },
     '($namespace)/distributor': {
-        'replacement': '($namespace)/loki.*-distributor',
+        'replacement': '($namespace)/.*-distributor',
     },
     '($namespace)/ruler': {
-        'replacement': '($namespace)/loki.*-ruler',
+        'replacement': '($namespace)/.*-ruler',
     },
     '($namespace)/querier': {
-        'replacement': '($namespace)/loki.*-querier',
+        'replacement': '($namespace)/.*-querier',
     },
-    '\\"(.*compactor|loki.*-backend.*|loki-single-binary)\\"': {
-        'replacement': '(loki.*-compactor|loki.*-backend.*|loki-single-binary)',
+    'loki.*-write': {
+        'replacement': '.*-write',
     },
-    'cluster=~\\"$cluster\\"': {
-        'replacement': 'cluster=~\\"|$cluster\\"',
+    'loki.*-read': {
+        'replacement': '.*-read',
+    },
+    'loki.*-backend': {
+        'replacement': '.*-backend',
     },
     '*.index-gateway': {
         'replacement': '.*index-gateway',
+    },
+    '\\"(.*compactor|.*-backend.*|loki-single-binary)\\"': {
+        'replacement': '(.*-compactor|.*-backend.*|loki-single-binary)',
+    },
+    'loki-single-binary': {
+        'replacement': '`}}{{ include "loki.resourceName" (dict "ctx" $) }}{{`',
     },
 }
 
@@ -109,7 +127,7 @@ https://github.com/grafana-community/helm-charts/tree/main/charts/loki/hack
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ printf "%%s-dashboards-%%s" (include "loki.name" $) "%(name)s" | trunc 63 | trimSuffix "-" }}
+  name: {{ include "loki.resourceName" (dict "ctx" $ "component" "dashboards" "suffix" "%(name)s") }}
   namespace: {{ .Values.monitoring.dashboards.namespace | default (include "loki.namespace" $) }}
   labels:
     {{- include "loki.labels" $ | nindent 4 }}
@@ -130,7 +148,7 @@ grafana_dashboard_operator = """
 apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaDashboard
 metadata:
-  name: {{ printf "%%s-%%s" (include "loki.dashboardsName" $) "%(name)s" | trunc 63 | trimSuffix "-" }}
+  name: {{ include "loki.resourceName" (dict "ctx" $ "component" "dashboards" "suffix" "%(name)s") }}
   namespace: {{ .Values.monitoring.dashboards.namespace | default (include "loki.namespace" $) }}
   {{- with (mergeOverwrite dict .Values.monitoring.dashboards.annotations .Values.monitoring.dashboards.grafanaOperator.annotations) }}
   annotations:
@@ -143,7 +161,7 @@ metadata:
     {{- end }}
 spec:
   allowCrossNamespaceImport: true
-  resyncPeriod: {{ .Values.monitoring.dashboards.grafanaOperator.resyncPeriod | quote | default "10m" }}
+  resyncPeriod: {{ .Values.monitoring.dashboards.grafanaOperator.resyncPeriod | default "10m" | quote }}
   {{- include "loki.grafana.operator.folder" $ | nindent 2 }}
   instanceSelector:
     matchLabels:
@@ -152,7 +170,7 @@ spec:
       {{- toYaml . | nindent 6 }}
       {{- end }}
   configMapRef:
-    name: {{ printf "%%s-%%s" (include "loki.dashboardsName" $) "%(name)s" | trunc 63 | trimSuffix "-" }}
+    name: {{ include "loki.resourceName" (dict "ctx" $ "component" "dashboards" "suffix" "%(name)s") }}
     key: %(name)s.json
 {{- end }}
 """
