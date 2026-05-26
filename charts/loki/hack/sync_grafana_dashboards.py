@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Fetch dashboards from provided urls into this chart."""
+import copy
 import json
 import os
 import re
@@ -37,7 +38,7 @@ charts = [
     {
         'git': 'https://github.com/grafana/loki.git',
         'branch': refs['ref.loki'],
-        'content': "(import 'dashboards.libsonnet') + (import 'config.libsonnet') + {_config+:: { horizontally_scalable_compactor_enabled: false, internal_components: false, meta_monitoring+: { enabled: true }, per_cluster_label: 'app_instance', promtail+: { enabled: false }, ssd+: { enabled: false, pod_prefix_matcher: 'loki.*' }}}",
+        'content': "(import 'dashboards.libsonnet') + (import 'config.libsonnet') + {_config+:: { horizontally_scalable_compactor_enabled: false, internal_components: false, meta_monitoring+: { enabled: true }, promtail+: { enabled: false }, ssd+: { enabled: false, pod_prefix_matcher: 'loki.*' }}}",
         'cwd': 'production/loki-mixin',
         'destination': '../templates/monitoring/dashboards',
         'type': 'jsonnet_mixin',
@@ -92,7 +93,17 @@ replacement_map = {
         'replacement': '(loki.*-compactor|loki.*-backend.*|loki-single-binary)',
     },
     'cluster=~\\"$cluster\\"': {
-        'replacement': 'cluster=~\\"|$cluster\\"',
+        'replacement': 'app_instance=~\\"$app_instance\\",cluster=~\\"|$cluster\\"',
+    },
+    # Rename recording rule metric name prefixes: cluster_ → app_instance_
+    'cluster_namespace_job_route:': {
+        'replacement': 'app_instance_namespace_job_route:',
+    },
+    'cluster_job_route:': {
+        'replacement': 'app_instance_job_route:',
+    },
+    'cluster_job:': {
+        'replacement': 'app_instance_job:',
     },
     '*.index-gateway': {
         'replacement': '.*index-gateway',
@@ -193,6 +204,14 @@ def patch_dashboards_json(content, multicluster_key):
         overwrite_list = []
         for variable in content_struct['templating']['list']:
             if variable['name'] == 'cluster':
+                # Insert app_instance variable before cluster
+                app_instance_var = copy.deepcopy(variable)
+                app_instance_var['name'] = 'app_instance'
+                app_instance_var['query'] = 'label_values(loki_build_info, app_instance)'
+                app_instance_var['allValue'] = '.*'
+                app_instance_var['hide'] = 0
+                overwrite_list.append(app_instance_var)
+                # cluster: optional, multicluster-gated
                 variable['allValue'] = '.*'
                 variable['hide'] = ':multicluster:'
             overwrite_list.append(variable)

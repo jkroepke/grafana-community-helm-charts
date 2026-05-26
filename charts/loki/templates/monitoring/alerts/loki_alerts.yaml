@@ -28,7 +28,7 @@ spec:
 {{- if .Values.monitoring.alerts.additionalRuleAnnotations }}
 {{ toYaml .Values.monitoring.alerts.additionalRuleAnnotations | indent 8 }}
 {{- end }}
-        description: '{{`{{`}} $labels.app_instance {{`}}`}} {{`{{`}} $labels.job {{`}}`}} {{`{{`}} $labels.route {{`}}`}} is experiencing {{`{{`}} printf "%.2f" $value {{`}}`}}% errors.
+        description: '{{`{{`}} $labels.cluster {{`}}`}} {{`{{`}} $labels.job {{`}}`}} {{`{{`}} $labels.route {{`}}`}} is experiencing {{`{{`}} printf "%.2f" $value {{`}}`}}% errors.
 
           '
         summary: Loki request error rate is high.
@@ -57,7 +57,7 @@ spec:
 {{- if .Values.monitoring.alerts.additionalRuleAnnotations }}
 {{ toYaml .Values.monitoring.alerts.additionalRuleAnnotations | indent 8 }}
 {{- end }}
-        description: '{{`{{`}} $labels.app_instance {{`}}`}} {{`{{`}} $labels.job {{`}}`}} is experiencing {{`{{`}} printf "%.2f" $value {{`}}`}}% increase of panics.
+        description: '{{`{{`}} $labels.cluster {{`}}`}} {{`{{`}} $labels.job {{`}}`}} is experiencing {{`{{`}} printf "%.2f" $value {{`}}`}}% increase of panics.
 
           '
         summary: Loki requests are causing code panics.
@@ -78,7 +78,7 @@ spec:
 {{- if .Values.monitoring.alerts.additionalRuleAnnotations }}
 {{ toYaml .Values.monitoring.alerts.additionalRuleAnnotations | indent 8 }}
 {{- end }}
-        description: '{{`{{`}} $labels.app_instance {{`}}`}} {{`{{`}} $labels.job {{`}}`}} {{`{{`}} $labels.route {{`}}`}} is experiencing {{`{{`}} printf "%.2f" $value {{`}}`}}s 99th percentile latency.
+        description: '{{`{{`}} $labels.cluster {{`}}`}} {{`{{`}} $labels.job {{`}}`}} {{`{{`}} $labels.route {{`}}`}} is experiencing {{`{{`}} printf "%.2f" $value {{`}}`}}s 99th percentile latency.
 
           '
         summary: Loki request error latency is high.
@@ -103,7 +103,7 @@ spec:
 {{- if .Values.monitoring.alerts.additionalRuleAnnotations }}
 {{ toYaml .Values.monitoring.alerts.additionalRuleAnnotations | indent 8 }}
 {{- end }}
-        description: '{{`{{`}} $labels.app_instance {{`}}`}} {{`{{`}} $labels.namespace {{`}}`}} has had {{`{{`}} printf "%.0f" $value {{`}}`}} compactors running for more than 5m. Only one compactor should run at a time.
+        description: '{{`{{`}} $labels.cluster {{`}}`}} {{`{{`}} $labels.namespace {{`}}`}} has had {{`{{`}} printf "%.0f" $value {{`}}`}} compactors running for more than 5m. Only one compactor should run at a time.
 
           '
         summary: Loki deployment is running more than one compactor.
@@ -128,7 +128,7 @@ spec:
 {{- if .Values.monitoring.alerts.additionalRuleAnnotations }}
 {{ toYaml .Values.monitoring.alerts.additionalRuleAnnotations | indent 8 }}
 {{- end }}
-        description: '{{`{{`}} $labels.app_instance {{`}}`}} {{`{{`}} $labels.namespace {{`}}`}} has not run compaction in the last 3 hours since the last compaction. This may indicate a problem with the compactor.
+        description: '{{`{{`}} $labels.cluster {{`}}`}} {{`{{`}} $labels.namespace {{`}}`}} has not run compaction in the last 3 hours since the last compaction. This may indicate a problem with the compactor.
 
           '
         summary: Loki compaction has not run in the last 3 hours since the last compaction.
@@ -160,7 +160,7 @@ spec:
 {{- if .Values.monitoring.alerts.additionalRuleAnnotations }}
 {{ toYaml .Values.monitoring.alerts.additionalRuleAnnotations | indent 8 }}
 {{- end }}
-        description: '{{`{{`}} $labels.app_instance {{`}}`}} {{`{{`}} $labels.namespace {{`}}`}} has not run compaction in the last 3h since startup. This may indicate a problem with the compactor.
+        description: '{{`{{`}} $labels.cluster {{`}}`}} {{`{{`}} $labels.namespace {{`}}`}} has not run compaction in the last 3h since startup. This may indicate a problem with the compactor.
 
           '
         summary: Loki compaction has not run in the last 3h since startup.

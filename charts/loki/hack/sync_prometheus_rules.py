@@ -32,7 +32,7 @@ refs = {
     'ref.loki': 'v3.7.1',
 }
 
-_mixin_config = "per_cluster_label: 'app_instance', horizontally_scalable_compactor_enabled: false, internal_components: false, meta_monitoring+: { enabled: true }, promtail+: { enabled: false }, ssd+: { enabled: false, pod_prefix_matcher: 'loki.*' }"
+_mixin_config = "horizontally_scalable_compactor_enabled: false, internal_components: false, meta_monitoring+: { enabled: true }, promtail+: { enabled: false }, ssd+: { enabled: false, pod_prefix_matcher: 'loki.*' }"
 
 # Source files list
 charts = [
@@ -65,7 +65,31 @@ condition_map = {}
 
 alert_condition_map = {}
 
-replacement_map = {}
+replacement_map = {
+    # Rename per_cluster_label 'cluster' → 'app_instance' in recording rule names.
+    # Most specific patterns first to avoid substring collisions.
+    'cluster_namespace_job_route:': {
+        'replacement': 'app_instance_namespace_job_route:',
+        'init': None,
+    },
+    'cluster_job_route:': {
+        'replacement': 'app_instance_job_route:',
+        'init': None,
+    },
+    'cluster_job:': {
+        'replacement': 'app_instance_job:',
+        'init': None,
+    },
+    # Rename in by() clause expressions.
+    ', cluster, ': {
+        'replacement': ', app_instance, ',
+        'init': None,
+    },
+    'by (cluster, ': {
+        'replacement': 'by (app_instance, ',
+        'init': None,
+    },
+}
 
 # standard header
 header = '''{{- /*
