@@ -44,9 +44,12 @@ spec:
           replacement: "{{ tpl . $}}$1"
           targetLabel: job
         {{- end }}
-        {{- if kindIs "string" .clusterLabel }}
         - action: replace
-          replacement: "{{ .clusterLabel | default (include "loki.clusterLabel" $) }}"
+          replacement: "{{ tpl .appInstanceLabel $ }}"
+          targetLabel: app_instance
+        {{- if and $.Values.monitoring.dashboards.multiCluster.enabled $.Values.monitoring.dashboards.multiCluster.clusterName }}
+        - action: replace
+          replacement: "{{ tpl $.Values.monitoring.dashboards.multiCluster.clusterName $ }}"
           targetLabel: cluster
         {{- end }}
         {{- with .relabelings }}

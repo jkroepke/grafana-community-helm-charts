@@ -29,7 +29,7 @@ def change_style(style, representer):
 
 refs = {
     # renovate: github=docker.io/grafana/loki
-    'ref.loki': 'v3.7.0',
+    'ref.loki': 'v3.7.1',
 }
 
 # Source files list
@@ -37,7 +37,7 @@ charts = [
     {
         'git': 'https://github.com/grafana/loki.git',
         'branch': refs['ref.loki'],
-        'content': "(import 'dashboards.libsonnet') + (import 'config.libsonnet') + {_config+:: { horizontally_scalable_compactor_enabled: false, internal_components: false, meta_monitoring+: { enabled: true }, promtail+: { enabled: false }, ssd+: { enabled: false, pod_prefix_matcher: 'loki.*' }}}",
+        'content': "(import 'dashboards.libsonnet') + (import 'config.libsonnet') + {_config+:: { horizontally_scalable_compactor_enabled: false, internal_components: false, meta_monitoring+: { enabled: true }, per_cluster_label: 'app_instance', promtail+: { enabled: false }, ssd+: { enabled: false, pod_prefix_matcher: 'loki.*' }}}",
         'cwd': 'production/loki-mixin',
         'destination': '../templates/monitoring/dashboards',
         'type': 'jsonnet_mixin',
@@ -110,7 +110,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: {{ printf "%%s-dashboards-%%s" (include "loki.name" $) "%(name)s" | trunc 63 | trimSuffix "-" }}
-  namespace: {{ .Values.monitoring.dashboards.namespace | default (include "loki.namespace" $) }}
+  namespace: {{ .Values.monitoring.namespace | default (include "loki.namespace" $) }}
   labels:
     {{- include "loki.labels" $ | nindent 4 }}
     {{- with .Values.monitoring.dashboards.labels }}
@@ -131,7 +131,7 @@ apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaDashboard
 metadata:
   name: {{ printf "%%s-%%s" (include "loki.dashboardsName" $) "%(name)s" | trunc 63 | trimSuffix "-" }}
-  namespace: {{ .Values.monitoring.dashboards.namespace | default (include "loki.namespace" $) }}
+  namespace: {{ .Values.monitoring.namespace | default (include "loki.namespace" $) }}
   {{- with (mergeOverwrite dict .Values.monitoring.dashboards.annotations .Values.monitoring.dashboards.grafanaOperator.annotations) }}
   annotations:
     {{- toYaml . | nindent 4 }}

@@ -57,19 +57,6 @@ Allow the release namespace to be overridden for multi-namespace deployments in 
 {{- end -}}
 
 {{/*
-Resource workload name template
-Params:
-  ctx = . context
-  componentValues = component values
-  component = component name (optional)
-  rolloutZoneName = rollout zone name (optional)
-  suffix = component suffix (optional)
-*/}}
-{{- define "loki.workloadResourceName" -}}
-{{- (tpl (.componentValues.fullnameOverride | default "") .ctx) | default (include "loki.resourceName" .) }}
-{{- end -}}
-
-{{/*
 Resource name template
 Params:
   ctx = . context
@@ -128,13 +115,6 @@ If release name contains chart name it will be used as a full name.
 {{- end }}
 
 {{/*
-Cluster label for rules and alerts.
-*/}}
-{{- define "loki.clusterLabel" -}}
-{{- .Values.clusterLabelOverride | default (include "loki.fullname" .) | trunc 63 | trimSuffix "-" }}
-{{- end }}
-
-{{/*
 Create chart name and version as used by the chart label.
 */}}
 {{- define "loki.chart" -}}
@@ -187,7 +167,8 @@ Input parameters:
 
 {{/*
 Base template for building docker image reference
-Always prepends the registry when one is configured (global or service-level).
+Determines the final image name, respecting the global registry if defined, unless the local repository
+already contains a full registry (indicated by a dot '.') for backwards-compatibility.
 It also respects `.digest` as well as `.sha` (deprecated).
 
 Parameters:
@@ -220,8 +201,10 @@ Parameters:
 {{- $tagRef := printf ":%s" (coalesce $component.tag $default.tag $defaultVersion | toString) -}}
 {{- $ref := ternary $tagRef $digestRef (empty $digestRef) -}}
 
+{{- /* Keep backwards-compatible behavior: do not prefix fully-qualified repositories. */ -}}
 {{- $prefix := "" -}}
-{{- if $registry -}}
+{{- $firstRepositorySegment := (split "/" $repository)._0 -}}
+{{- if and $registry (not (contains "." $firstRepositorySegment)) -}}
 {{- $prefix = printf "%s/" $registry -}}
 {{- end -}}
 
@@ -296,7 +279,7 @@ alibabacloud:
   {{- toYaml (mergeOverwrite dict
     (dict
       "bucket" $bucketName
-      "access_key_id" .accessKeyId
+      "access_key_id" .secretAccessKey
       "secret_access_key" .secretAccessKey
     )
     (omit . "bucket" "accessKeyId" "secretAccessKey")
@@ -722,7 +705,7 @@ http {
     {{- $indexGatewayHost := include "loki.resourceName" (dict "ctx" . "component" "index-gateway") }}
     {{- $rulerHost := include "loki.resourceName" (dict "ctx" . "component" "ruler") }}
     {{- $compactorHost := include "loki.resourceName" (dict "ctx" . "component" "compactor") }}
-    {{- $querySchedulerHost := include "loki.resourceName" (dict "ctx" . "component" "query-scheduler") }}
+    {{- $schedulerHost := include "loki.resourceName" (dict "ctx" . "component" "scheduler") }}
     {{- $querierHost := include "loki.resourceName" (dict "ctx" . "component" "querier") }}
 
     {{- $distributorUrl := printf "%s://%s.%s.svc.%s:%s" $httpSchema $distributorHost $namespace .Values.global.clusterDomain (.Values.loki.server.http_listen_port | toString) -}}
@@ -731,7 +714,7 @@ http {
     {{- $indexGatewayUrl := printf "%s://%s.%s.svc.%s:%s" $httpSchema $indexGatewayHost $namespace .Values.global.clusterDomain (.Values.loki.server.http_listen_port | toString) }}
     {{- $rulerUrl := printf "%s://%s.%s.svc.%s:%s" $httpSchema $rulerHost $namespace .Values.global.clusterDomain (.Values.loki.server.http_listen_port | toString) }}
     {{- $compactorUrl := printf "%s://%s.%s.svc.%s:%s" $httpSchema $compactorHost $namespace .Values.global.clusterDomain (.Values.loki.server.http_listen_port | toString) }}
-    {{- $querySchedulerUrl := printf "%s://%s.%s.svc.%s:%s" $httpSchema $querySchedulerHost $namespace .Values.global.clusterDomain (.Values.loki.server.http_listen_port | toString) }}
+    {{- $schedulerUrl := printf "%s://%s.%s.svc.%s:%s" $httpSchema $schedulerHost $namespace .Values.global.clusterDomain (.Values.loki.server.http_listen_port | toString) }}
     {{- $querierUrl := printf "%s://%s.%s.svc.%s:%s" $httpSchema $querierHost $namespace .Values.global.clusterDomain (.Values.loki.server.http_listen_port | toString) }}
 
     {{- if eq (include "loki.deployment.isMonolithic" .) "true"}}
@@ -741,7 +724,7 @@ http {
     {{- $indexGatewayUrl = $monolithicUrl }}
     {{- $rulerUrl = $monolithicUrl }}
     {{- $compactorUrl = $monolithicUrl }}
-    {{- $querySchedulerUrl = $monolithicUrl }}
+    {{- $schedulerUrl = $monolithicUrl }}
     {{- $querierUrl = $monolithicUrl }}
     {{- else if eq (include "loki.deployment.isScalable" .) "true"}}
     {{- $distributorUrl = $writeUrl }}
@@ -751,7 +734,7 @@ http {
     {{- $indexGatewayUrl = $backendUrl }}
     {{- $rulerUrl = $backendUrl }}
     {{- $compactorUrl = $backendUrl }}
-    {{- $querySchedulerUrl = $backendUrl }}
+    {{- $schedulerUrl = $backendUrl }}
     {{- end -}}
 
     {{- if .Values.loki.ui.gateway.enabled }}
@@ -922,7 +905,7 @@ http {
       {{- with .Values.gateway.nginxConfig.locationSnippet }}
       {{- tpl . $ | nindent 6 }}
       {{- end }}
-      set $backend     "{{ $querySchedulerUrl }}";
+      set $backend     "{{ $schedulerUrl }}";
       proxy_pass       $backend$request_uri;
     }
 
@@ -1025,12 +1008,12 @@ enableServiceLinks: {{ $ctx.Values.loki.enableServiceLinks }}
 
 {{/* Determine query-scheduler address */}}
 {{- define "loki.querySchedulerAddress" -}}
-{{- $querySchedulerAddress := ""}}
+{{- $schedulerAddress := ""}}
 {{- $isDistributed := eq (include "loki.deployment.isDistributed" .) "true" -}}
 {{- if $isDistributed -}}
-{{- $querySchedulerAddress = printf "%s-headless.%s.svc.%s:%s" (include "loki.resourceName" (dict "ctx" . "component" "query-scheduler")) (include "loki.namespace" .) .Values.global.clusterDomain (.Values.loki.server.grpc_listen_port | toString) -}}
+{{- $schedulerAddress = printf "%s.%s.svc.%s:%s" (include "loki.resourceName" (dict "ctx" . "component" "query-scheduler")) (include "loki.namespace" .) .Values.global.clusterDomain (.Values.loki.server.grpc_listen_port | toString) -}}
 {{- end -}}
-{{- printf "%s" $querySchedulerAddress }}
+{{- printf "%s" $schedulerAddress }}
 {{- end }}
 
 {{/* Determine querier address */}}
@@ -1196,15 +1179,8 @@ env:
   {{- with $envList | uniq }}
   {{- toYaml . | nindent 2 }}
   {{- end }}
-  - name: POD_IP
+  - name: HASH_RING_INSTANCE_ADDR
     valueFrom:
       fieldRef:
         fieldPath: status.podIP
 {{- end -}}
-
-{{/*
-format rules dir
-*/}}
-{{- define "loki.rulerRulesDirName" -}}
-rules-{{ . | replace "_" "-" | trimSuffix "-" | lower }}
-{{- end }}

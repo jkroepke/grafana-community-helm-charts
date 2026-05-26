@@ -73,7 +73,6 @@ ingester:
 sidecar:
   rules:
     enabled: true
-ignoreMinioDeprecation: true
 minio:
   enabled: true
 read:
@@ -102,10 +101,6 @@ memcached:
 compactor:
   replicas: 1
   persistence:
-    enabled: true
-    size: 20Gi
-    claims: []
-  statefulSetRecreateJob:
     enabled: true
 indexGateway:
   replicas: 2
@@ -191,17 +186,22 @@ monitoring:
     enabled: true
   rules:
     enabled: true
-    alerting: true
     labels:
       release: kube-prometheus-stack
-    additionalGroups:
-      - name: "additional-rules"
-        rules:
-          - alert: HighRequestLatency
-            expr: 'job:request_latency_seconds:mean5m{job="myjob"} > 0.5'
-            for: 10m
-            labels:
-              severity: page
-            annotations:
-              summary: "High request latency"
-              description: "Request latency is above 0.5s for more than 10 minutes"
+  alerts:
+    enabled: true
+    labels:
+      release: kube-prometheus-stack
+  additionalPrometheusRules:
+    additional-rules:
+      groups:
+        - name: "additional-rules"
+          rules:
+            - alert: HighRequestLatency
+              expr: 'job:request_latency_seconds:mean5m{job="myjob"} > 0.5'
+              for: 10m
+              labels:
+                severity: page
+              annotations:
+                summary: "High request latency"
+                description: "Request latency is above 0.5s for more than 10 minutes"

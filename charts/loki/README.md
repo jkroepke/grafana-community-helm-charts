@@ -53,221 +53,72 @@ See the [changelog](https://grafana-community.github.io/helm-charts/changelog/?c
 
 ## Upgrading
 
-### From 16.x to 17.0.0 ([#366](https://github.com/grafana-community/helm-charts/pull/366))
+### From 13.x to 14.0.0
 
-The built-in MinIO subchart is now **officially deprecated**. Enabling `minio.enabled=true` now fails chart rendering by default.
+Dashboards, recording rules, and alert rules are now generated from [loki-mixin](https://github.com/grafana/loki/tree/main/production/loki-mixin) rather than maintained as static files. This fixes dashboard queries in Distributed deployment mode and aligns the chart with the upstream Loki observability stack.
 
-Actions required:
-1. Configure a dedicated external object storage backend instead of the built-in MinIO dependency
-   (for example: AWS S3, GCS, or Azure Blob). Potential self-hosted S3-compatible options include
-   RustFS and Garage; validate production suitability for your environment before adoption.
-2. Deploy a transition release that keeps old MinIO data readable but writes new data to the external store.
-3. Keep both stores configured until old data in MinIO has aged out according to retention.
-4. Remove the MinIO-related config only after retention has fully elapsed.
+#### `cluster` label repurposed; new `app_instance` label
 
-Recommended migration values flow:
-
-Before (legacy state using built-in MinIO):
-
-```yaml
-minio:
-  enabled: true
-
-loki:
-  schemaConfig:
-    configs:
-      - from: "2024-01-01"
-        store: tsdb
-        object_store: s3
-        schema: v13
-        index:
-          prefix: index_
-          period: 24h
-```
-
-Transition release (temporary dual-store period):
-
-```yaml
-# Temporary escape hatch while migrating
-ignoreMinioDeprecation: true
-minio:
-  enabled: true
-
-loki:
-  # Use structuredConfig so you can configure named stores explicitly
-  structuredConfig:
-    storage_config:
-      named_stores:
-        aws:
-          minio:
-            endpoint: '{{ include "loki.minio" $ }}'
-            bucketnames: chunks
-            secret_access_key: '{{ $.Values.minio.rootPassword }}'
-            access_key_id: '{{ $.Values.minio.rootUser }}'
-            s3forcepathstyle: true
-            insecure: true
-          s3-loki-chunks:
-            endpoint: 's3.example.com'
-            bucketnames: chunks
-            access_key_id: '<s3-access-key>'
-            secret_access_key: '<s3-secret-key>'
-            s3forcepathstyle: true
-            insecure: true
-    schema_config:
-      configs:
-        # Keep old data in MinIO readable
-        - from: "2024-01-01"
-          store: tsdb
-          object_store: minio
-          schema: v13
-          index:
-            prefix: index_
-            period: 24h
-        # Write new data to external S3
-        - from: "2026-05-01" # Adjust this date as needed based on your retention period. Should be in the near future
-          store: tsdb
-          object_store: s3-loki-chunks
-          schema: v13
-          index:
-            prefix: index_
-            period: 24h
-```
-
-Final release (after retention has elapsed):
-
-The chart still requires `loki.storage.bucketNames` for helper-generated storage sections such as `common.storage` and ruler storage.
-
-```yaml
-loki:
-  storage:
-    bucketNames:
-      chunks: chunks
-      ruler: ruler
-  structuredConfig:
-    storage_config:
-      named_stores:
-        aws:
-          s3-loki-chunks:
-            endpoint: 's3.example.com'
-            bucketnames: chunks
-            access_key_id: '<s3-access-key>'
-            secret_access_key: '<s3-secret-key>'
-            s3forcepathstyle: true
-            insecure: true
-    schema_config:
-      configs:
-        - from: "2026-05-01"
-          store: tsdb
-          object_store: s3-loki-chunks
-          schema: v13
-          index:
-            prefix: index_
-            period: 24h
-```
-
-Reference docs:
-- <https://grafana.com/docs/loki/latest/operations/storage/schema/>
-- <https://grafana.com/docs/loki/latest/configure/storage/>
-- Potential self-hosted S3-compatible options:
-  - RustFS: <https://docs.rustfs.com/installation/docker/>
-  - Garage: <https://garagehq.deuxfleurs.fr/documentation/quick-start/>
-
-### From 15.x to 16.0.0 ([#499](https://github.com/grafana-community/helm-charts/pull/499))
-
-The `loki-canary` workload no longer uses the shared Loki pod template. This change isolates canary rendering from Loki component configuration after users reported that shared settings were unintentionally inherited by canary and could break canary startup.
-
-What changed:
-- `loki-canary` no longer inherits metadata from `loki.*` values such as `loki.annotations`, `loki.serviceAnnotations`, and `loki.serviceLabels`.
-- Canary pod annotations are now sourced only from `lokiCanary.podAnnotations`.
-- Canary pod API token mount behavior is now controlled explicitly by `lokiCanary.automountServiceAccountToken`.
+The metric label that identifies the Loki Helm release has changed from `cluster` to `app_instance`. The `cluster` label is no longer added by default — it is now an optional label for multi-cluster environments, controlled by `monitoring.dashboards.multiCluster.enabled`. When enabled, its value comes from `monitoring.dashboards.multiCluster.clusterName` and represents the Kubernetes cluster, not the Helm release.
 
 Actions required:
-- Move canary-specific metadata from `loki.*` keys to `lokiCanary.*` keys.
-- If you previously relied on inherited settings, set the canary values explicitly.
+- Update any alerting rules, dashboards, or downstream recording rules that filter on `cluster=~"<release-name>"` to use `app_instance=~"<release-name>"` instead.
+- Existing Grafana dashboard URLs that encode the `cluster` variable in the URL will need to be updated.
+- If you run Loki across multiple Kubernetes clusters, enable `monitoring.dashboards.multiCluster.enabled` and set `monitoring.dashboards.multiCluster.clusterName` to restore the `cluster` label with a per-cluster value.
 
-Before:
+#### `clusterLabelOverride` and `monitoring.serviceMonitor.clusterLabel` removed
 
-```yaml
-loki:
-  annotations:
-    team: observability
-  serviceAnnotations:
-    prometheus.io/scrape: "true"
-  serviceLabels:
-    app: loki
-```
+The top-level `clusterLabelOverride` value and `monitoring.serviceMonitor.clusterLabel` have been removed. Use `monitoring.serviceMonitor.appInstanceLabel` instead, which accepts Helm template syntax and defaults to `{{ include "loki.fullname" . }}`.
 
-After:
+#### Recording rule names changed
 
-```yaml
-lokiCanary:
-  annotations:
-    team: observability
-  podAnnotations:
-    team: observability
-  service:
-    annotations:
-      prometheus.io/scrape: "true"
-    labels:
-      app: loki-canary
-  automountServiceAccountToken: false
-```
+All recording rule `record:` names now use `app_instance`-prefixed conventions from loki-mixin (e.g. `job:loki_request_duration_seconds:99quantile` → `app_instance_job:loki_request_duration_seconds:99quantile`). If you reference these in custom alerts or dashboards, update your queries.
 
-### From 14.x to 15.0.0 ([#413](https://github.com/grafana-community/helm-charts/pull/413))
+#### Alerts separated from rules
 
-Support for Cilium-specific network policies has been removed from this chart.
+Alert rules have been split into a new `monitoring.alerts` section, separate from `monitoring.rules` (which now only controls recording rules). Users who had `monitoring.rules.alerting: true` must switch to `monitoring.alerts.enabled: true`.
 
-Actions required:
-- Remove `networkPolicy.flavor` from your values file. The chart now renders Kubernetes `NetworkPolicy` resources only.
-- Remove `networkPolicy.egressWorld.enabled` and `networkPolicy.egressKubeApiserver.enabled` from your values file.
-- If you relied on Cilium-only behavior, manage those `CiliumNetworkPolicy` rules outside this chart (for example with separate manifests managed by your GitOps workflow).
-
-Before:
+The old `monitoring.rules.configs` block (with per-alert `enabled`, `for`, `lookbackPeriod`, `threshold`, `severity`) has been removed. Alerts are now always generated from the loki-mixin templates and can be individually disabled or customised:
 
 ```yaml
-networkPolicy:
-  enabled: true
-  flavor: cilium
-  egressWorld:
+monitoring:
+  alerts:
     enabled: true
-  egressKubeApiserver:
-    enabled: true
+    disabled: {}    # disable specific alerts: { LokiRequestErrors: true }
+    overrides: {}   # override per-alert for/severity: { LokiRequestErrors: { for: 5m, severity: warning } }
+    keepFiringFor: ""
 ```
 
-After:
+Note: `lookbackPeriod` and `threshold` are not carried forward as they did not generalise to all PromQL alert expressions.
+
+#### Per-section namespace values consolidated
+
+`monitoring.dashboards.namespace` and `monitoring.rules.namespace` have been removed in favour of a single `monitoring.namespace` value that applies to all monitoring resources (ServiceMonitor, PrometheusRule, ConfigMap dashboards).
+
+#### `monitoring.rules.additionalGroups` replaced
+
+`monitoring.rules.additionalGroups` has been replaced by `monitoring.additionalPrometheusRules`, which uses a dict structure and supports both recording rules and alerts:
 
 ```yaml
-networkPolicy:
-  enabled: true
+monitoring:
+  additionalPrometheusRules:
+    my-custom-rules:          # becomes a separate PrometheusRule resource
+      groups:
+        - name: my-rules
+          rules:
+            - alert: MyAlert
+              expr: 'up{job="loki"} == 0'
 ```
 
-### From 13.x to 14.0.0 ([#479](https://github.com/grafana-community/helm-charts/pull/479))
+#### Dashboard architecture changed
 
-The dot-based registry heuristic has been removed. Previously, if the `repository` value contained a dot (`.`) in its first path segment, the chart assumed it already included a registry and silently skipped prepending `global.imageRegistry` or the service-level `registry`. This caused configured registries to be ignored for image references like `mirror.gcr.io/grafana/loki` or `foo.com/loki-fips`.
+Dashboards are now generated from loki-mixin into individual ConfigMap resources (one per dashboard) instead of a single ConfigMap containing all dashboards. The static JSON source files under `src/dashboards/` have been removed.
 
-**This is now the expected behavior**: when a registry is configured (via `global.imageRegistry` or a component's `image.registry`), it is always prepended unconditionally.
-
-Actions required:
-- If you stored a fully-qualified image reference in `repository` (e.g. `repository: private.registry.com/grafana/loki`) and relied on the dot-heuristic to prevent double-prefixing, split the value into separate `registry` and `repository` fields:
-
-Before:
-
-```yaml
-loki:
-  image:
-    repository: private.registry.com/grafana/loki
-```
-
-After:
-
-```yaml
-loki:
-  image:
-    registry: private.registry.com
-    repository: grafana/loki
-```
-
-Users who only set `repository` to a plain path (e.g. `grafana/loki`) or who use `global.imageRegistry` / `image.registry` correctly are unaffected.
+New dashboard configuration options:
+- `monitoring.dashboards.defaultDashboardsTimezone` (default: `utc`)
+- `monitoring.dashboards.defaultDashboardsEditable` (default: `true`)
+- `monitoring.dashboards.defaultDashboardsInterval` (default: `1m`)
+- `monitoring.dashboards.grafanaOperator` — optional deployment via Grafana Operator CRD instead of ConfigMaps
 
 ### From 12.x to 13.0.0 ([#258](https://github.com/grafana-community/helm-charts/pull/258))
 

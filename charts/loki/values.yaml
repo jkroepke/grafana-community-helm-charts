@@ -19,15 +19,12 @@ global:
   # -- configures DNS service namespace
   dnsNamespace: "kube-system"
   # -- Common additional CLI arguments for all jobs (that is, -log.level debug, -config.expand-env=true or -log-config-reverse-order)
-  # (deprecated, use defaults.extraArgs)
   # scope: backend, bloom-builder, bloom-gateway, bloom-planner, compactor, distributor, index-gateway, ingester, overrides-exporter, pattern-ingester, querier, query-frontend, query-scheduler, read, ruler, write.
   extraArgs: []
   # -- Common environment variables to add to all pods directly managed by this chart.
-  # (deprecated, use defaults.extraEnv)
   # scope: backend, bloom-builder, bloom-gateway, bloom-planner, compactor, distributor, index-gateway, ingester, overrides-exporter, pattern-ingester, querier, query-frontend, query-scheduler, read, ruler, write.
   extraEnv: []
   # -- Common source of environment injections to add to all pods directly managed by this chart.
-  # (deprecated, use defaults.extraEnvFrom)
   # scope: backend, bloom-builder, bloom-gateway, bloom-planner, compactor, distributor, index-gateway, ingester, overrides-exporter, pattern-ingester, querier, query-frontend, query-scheduler, read, ruler, write.
   # For example to inject values from a Secret, use:
   # extraEnvFrom:
@@ -35,11 +32,9 @@ global:
   #       name: mysecret
   extraEnvFrom: []
   # -- Common volumes to add to all pods directly managed by this chart.
-  # (deprecated, use defaults.extraVolumes)
   # scope: backend, bloom-builder, bloom-gateway, bloom-planner, compactor, distributor, index-gateway, ingester, overrides-exporter, pattern-ingester, querier, query-frontend, query-scheduler, read, ruler, write.
   extraVolumes: []
   # -- Common mount points to add to all pods directly managed by this chart.
-  # (deprecated, use defaults.extraVolumeMounts)
   # scope: backend, bloom-builder, bloom-gateway, bloom-planner, compactor, distributor, index-gateway, ingester, overrides-exporter, pattern-ingester, querier, query-frontend, query-scheduler, read, ruler, write.
   extraVolumeMounts: []
 # -- Overrides the chart's name
@@ -48,8 +43,6 @@ nameOverride: ""
 fullnameOverride: ""
 # -- Overrides the chart's namespace
 namespaceOverride: ""
-# -- Overrides the chart's cluster label
-clusterLabelOverride: ""
 # -- Image pull secrets for Docker images
 imagePullSecrets: []
 # -- Deployment mode lets you specify how to deploy Loki.
@@ -68,7 +61,8 @@ commonLabels: {}
 
 ######################################################################################################################
 #
-# Defaults applied to all loki components, including loki-canary.
+# Defaults applied to all loki configurations
+# Current supported scope: backend, bloom-builder, distributor
 #
 ######################################################################################################################
 defaults:
@@ -143,12 +137,6 @@ defaults:
     # -- trafficDistribution for services
     # Ref: https://kubernetes.io/docs/concepts/services-networking/service/#traffic-distribution
     trafficDistribution: ""
-    # -- ipFamilyPolicy for all services
-    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
-    ipFamilyPolicy: ""
-    # -- ipFamilies for all services
-    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
-    ipFamilies: []
   # -- KEDA autoscaling shared configuration for all components that support KEDA
   kedaAutoscaling:
     # -- Prometheus server address for KEDA triggers
@@ -171,15 +159,6 @@ defaults:
       authModes: ""
       # -- Secret key references for TriggerAuthentication
       secretTargetRef: []
-  statefulSetRecreateJob:
-    # -- Enable the PVC resize job for statefulsets. This job will be triggered when the storage size is increased and
-    # will recreate the statefulset to allow resizing of PVCs, which is not natively supported by Kubernetes.
-    patchPVC: true
-    image:
-      registry: registry.k8s.io
-      repository: kubectl
-      # -- Overrides the image tag. Defaults to .Capabilities.KubeVersion.Version
-      tag: ''
 
 ######################################################################################################################
 #
@@ -519,6 +498,7 @@ loki:
   # -- Extra memberlist configuration
   extraMemberlistConfig:
     abort_if_cluster_join_fails: true
+    advertise_addr: ${HASH_RING_INSTANCE_ADDR}
     advertise_port: 7946
     bind_port: 7946
     max_join_backoff: 1m
@@ -553,12 +533,6 @@ loki:
     # -- trafficDistribution for services
     # Ref: https://kubernetes.io/docs/concepts/services-networking/service/#traffic-distribution
     trafficDistribution: ""
-    # -- ipFamilyPolicy for all services
-    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
-    ipFamilyPolicy: ""
-    # -- ipFamilies for all services
-    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
-    ipFamilies: []
   # -- Limits config
   limits_config:
     reject_old_samples: true
@@ -823,14 +797,10 @@ lokiCanary:
   labelname: pod
   # -- Additional annotations for the `loki-canary` Daemonset
   annotations: {}
-  # -- Additional labels for the `loki-canary` Daemonset
-  labels: {}
   # -- Additional annotations for each `loki-canary` pod
   podAnnotations: {}
   # -- Additional labels for each `loki-canary` pod
   podLabels: {}
-  # -- The number of old ReplicaSets to retain to allow rollback
-  revisionHistoryLimit: 10
   service:
     # -- Annotations for loki-canary Service
     annotations: {}
@@ -945,7 +915,6 @@ lokiCanary:
     labels: {}
     # -- Set this toggle to false to opt out of automounting API credentials for the service account
     automountServiceAccountToken: false
-
 ######################################################################################################################
 #
 # Service Accounts and Kubernetes RBAC
@@ -965,7 +934,6 @@ serviceAccount:
   labels: {}
   # -- Set this toggle to false to opt out of automounting API credentials for the service account
   automountServiceAccountToken: true
-
 # RBAC configuration
 rbac:
   # -- For OpenShift set sccEnabled to 'true' to use the SecurityContextConstraints.
@@ -974,7 +942,6 @@ rbac:
   sccAllowHostDirVolumePlugin: false
   # -- Whether to install RBAC in the namespace only or cluster-wide. Useful if you want to watch ConfigMap globally.
   namespaced: false
-
 ######################################################################################################################
 #
 # Network Policy configuration
@@ -983,6 +950,9 @@ rbac:
 networkPolicy:
   # -- Specifies whether Network Policies should be created
   enabled: false
+  # -- Specifies whether the policies created will be standard Network Policies (flavor: kubernetes)
+  # or Cilium Network Policies (flavor: cilium)
+  flavor: kubernetes
   metrics:
     # -- Specifies the Pods which are allowed to access the metrics port.
     # As this is cross-namespace communication, you also need the namespaceSelector.
@@ -1020,6 +990,12 @@ networkPolicy:
     podSelector: {}
     # -- Specifies the namespace the discovery Pods are running in
     namespaceSelector: {}
+  egressWorld:
+    # -- Enable additional cilium egress rules to external world for write, read and backend.
+    enabled: false
+  egressKubeApiserver:
+    # -- Enable additional cilium egress rules to kube-apiserver for backend.
+    enabled: false
 ######################################################################################################################
 #
 # Global memberlist configuration
@@ -1109,7 +1085,7 @@ gateway:
     # -- The gateway image repository
     repository: nginxinc/nginx-unprivileged
     # -- The gateway image tag
-    tag: 1.31-alpine
+    tag: 1.30-alpine
     # -- Overrides the gateway image tag with an image digest
     digest: null
     # -- The gateway image pull policy
@@ -1214,12 +1190,6 @@ gateway:
     sessionAffinity: ""
     # -- Session affinity config for gateway Service
     sessionAffinityConfig: {}
-    # -- ipFamilyPolicy for gateway Service
-    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
-    ipFamilyPolicy: ""
-    # -- ipFamilies for gateway Service
-    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
-    ipFamilies: []
   serviceAccount:
     # -- Specifies whether a ServiceAccount should be created
     create: true
@@ -1388,7 +1358,7 @@ gateway:
     image:
       registry: ghcr.io
       repository: "jkroepke/access-log-exporter"
-      tag: "0.3.13"
+      tag: "0.3.11"
       pullPolicy: IfNotPresent
     resources:
       requests: {}
@@ -1427,13 +1397,6 @@ gateway:
       failureThreshold: 3
     # -- Startup probe for memcached exporter
     startupProbe: {}
-    service:
-      # -- Annotations for the gateway metrics exporter service.
-      # Use this instead of gateway.service.annotations to avoid propagating
-      # annotations (e.g. external-dns) to the exporter ClusterIP service.
-      annotations: {}
-      # -- Labels for the gateway metrics exporter service.
-      labels: {}
 
 # -- Ingress configuration Use either this ingress or the gateway, but not both at once.
 # If you enable this, make sure to disable the gateway.
@@ -1451,17 +1414,17 @@ ingress:
   #    blackbox.monitoring.exclude: "true"
   paths:
     # -- Paths that are exposed by Loki Distributor.
-    # If deployment mode is Distributed, the requests are forwarded to the service:.
-    # If deployment mode is SimpleScalable, the requests are forwarded to write k8s service:.
-    # If deployment mode is SingleBinary, the requests are forwarded to the central/single k8s service:
+    # If deployment mode is Distributed, the requests are forwarded to the service: `{{"loki.distributorFullname"}}`.
+    # If deployment mode is SimpleScalable, the requests are forwarded to write k8s service: `{{"loki.writeFullname"}}`.
+    # If deployment mode is SingleBinary, the requests are forwarded to the central/single k8s service: `{{"loki.fullname"}}`
     distributor:
       - /api/prom/push
       - /loki/api/v1/push
       - /otlp/v1/logs
     # -- Paths that are exposed by Loki Query Frontend.
-    # If deployment mode is Distributed, the requests are forwarded to the service.
-    # If deployment mode is SimpleScalable, the requests are forwarded to write k8s service`.
-    # If deployment mode is SingleBinary, the requests are forwarded to the central/single k8s service`
+    # If deployment mode is Distributed, the requests are forwarded to the service: `{{"loki.queryFrontendFullname"}}`.
+    # If deployment mode is SimpleScalable, the requests are forwarded to write k8s service: `{{"loki.readFullname"}}`.
+    # If deployment mode is SingleBinary, the requests are forwarded to the central/single k8s service: `{{"loki.fullname"}}`
     queryFrontend:
       - /api/prom/query
       # this path covers labels and labelValues endpoints
@@ -1486,9 +1449,9 @@ ingress:
       # this path covers UI API
       - /ui
     # -- Paths that are exposed by Loki Ruler.
-    # If deployment mode is Distributed, the requests are forwarded to the service.
-    # If deployment mode is SimpleScalable, the requests are forwarded to k8s service.
-    # If deployment mode is SingleBinary, the requests are forwarded to the central/single k8s service
+    # If deployment mode is Distributed, the requests are forwarded to the service: `{{"loki.rulerFullname"}}`.
+    # If deployment mode is SimpleScalable, the requests are forwarded to k8s service: `{{"loki.backendFullname"}}`.
+    # If deployment mode is SingleBinary, the requests are forwarded to the central/single k8s service: `{{"loki.fullname"}}`
     ruler:
       - /api/prom/rules
       - /api/prom/api/v1/rules
@@ -1497,9 +1460,9 @@ ingress:
       - /prometheus/api/v1/rules
       - /prometheus/api/v1/alerts
     # -- Paths that are exposed by Loki Compactor.
-    # If deployment mode is Distributed, the requests are forwarded to the service.
-    # If deployment mode is SimpleScalable, the requests are forwarded to k8s service.
-    # If deployment mode is SingleBinary, the requests are forwarded to the central/single k8s service`
+    # If deployment mode is Distributed, the requests are forwarded to the service: `{{"loki.compactorFullname"}}`.
+    # If deployment mode is SimpleScalable, the requests are forwarded to k8s service: `{{"loki.backendFullname"}}`.
+    # If deployment mode is SingleBinary, the requests are forwarded to the central/single k8s service: `{{"loki.fullname"}}`
     compactor:
       - /loki/api/v1/delete
   # -- Hosts configuration for the ingress, passed through the `tpl` function to allow templating
@@ -1555,9 +1518,9 @@ route:
         - /loki/api/v1/push
         - /otlp/v1/logs
       # -- Paths that are exposed by Loki Query Frontend.
-      # If deployment mode is Distributed, the requests are forwarded to the service.
-      # If deployment mode is SimpleScalable, the requests are forwarded to read k8s service.
-      # If deployment mode is SingleBinary, the requests are forwarded to the central/single k8s service`
+      # If deployment mode is Distributed, the requests are forwarded to the service: `{{"loki.queryFrontendFullname"}}`.
+      # If deployment mode is SimpleScalable, the requests are forwarded to read k8s service: `{{"loki.readFullname"}}`.
+      # If deployment mode is SingleBinary, the requests are forwarded to the central/single k8s service: `{{"loki.fullname"}}`
       queryFrontend:
         - /api/prom/query
         # this path covers labels and labelValues endpoints
@@ -1582,9 +1545,9 @@ route:
         # this path covers UI API
         - /ui
       # -- Paths that are exposed by Loki Ruler.
-      # If deployment mode is Distributed, the requests are forwarded to the service.
-      # If deployment mode is SimpleScalable, the requests are forwarded to k8s service.
-      # If deployment mode is SingleBinary, the requests are forwarded to the central/single k8s service.
+      # If deployment mode is Distributed, the requests are forwarded to the service: `{{"loki.rulerFullname"}}`.
+      # If deployment mode is SimpleScalable, the requests are forwarded to k8s service: `{{"loki.backendFullname"}}`.
+      # If deployment mode is SingleBinary, the requests are forwarded to the central/single k8s service: `{{"loki.fullname"}}`
       ruler:
         - /api/prom/rules
         - /api/prom/api/v1/rules
@@ -1593,9 +1556,9 @@ route:
         - /prometheus/api/v1/rules
         - /prometheus/api/v1/alerts
       # -- Paths that are exposed by Loki Compactor.
-      # If deployment mode is Distributed, the requests are forwarded to the service.
-      # If deployment mode is SimpleScalable, the requests are forwarded to k8s service.
-      # If deployment mode is SingleBinary, the requests are forwarded to the central/single k8s service.
+      # If deployment mode is Distributed, the requests are forwarded to the service: `{{"loki.compactorFullname"}}`.
+      # If deployment mode is SimpleScalable, the requests are forwarded to k8s service: `{{"loki.backendFullname"}}`.
+      # If deployment mode is SingleBinary, the requests are forwarded to the central/single k8s service: `{{"loki.fullname"}}`
       compactor:
         - /loki/api/v1/delete
 
@@ -1725,12 +1688,6 @@ singleBinary:
     sessionAffinity: ""
     # -- Session affinity config for single binary Service
     sessionAffinityConfig: {}
-    # -- ipFamilyPolicy for single binary Service
-    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
-    ipFamilyPolicy: ""
-    # -- ipFamilies for single binary Service
-    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
-    ipFamilies: []
     # -- Adds the appProtocol field to the single binary service. This allows single binary to work with istio protocol selection.
     appProtocol:
       # -- Set the optional grpc service protocol. Ex: "grpc", "http2" or "https"
@@ -1827,20 +1784,8 @@ singleBinary:
 write:
   # -- Enable the component. Requires `loki.deploymentMode` to be set to `SimpleScalable`.
   enabled: true
-  # -- Kind of write workload. StatefulSet and Deployment are supported.
-  kind: StatefulSet
-  # -- Override for the write fullname. By default, this is generated using the fullname template with "-backend"
-  fullnameOverride: '{{ include "loki.name" . }}-write'
-  # -- EXPERIMENTAL: Enable creating a Job to recreate the write StatefulSet when the compactor configuration is changed.
-  ## Only applicable if `compactor.kind` is StatefulSet. Useful for PVC size changes, which require recreating the StatefulSet.
-  statefulSetRecreateJob:
-    enabled: false
   # -- Number of replicas for the write
   replicas: 3
-  # -- UpdateStrategy or Strategy for the write.
-  strategy:
-    rollingUpdate:
-      partition: 0
   autoscaling:
     # -- Enable autoscaling for the write.
     enabled: false
@@ -1919,12 +1864,6 @@ write:
     sessionAffinity: ""
     # -- Session affinity config for write Service
     sessionAffinityConfig: {}
-    # -- ipFamilyPolicy for write Service
-    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
-    ipFamilyPolicy: ""
-    # -- ipFamilies for write Service
-    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
-    ipFamilies: []
     # -- Adds the appProtocol field to the write service. This allows write to work with istio protocol selection.
     appProtocol:
       # -- Set the optional grpc service protocol. Ex: "grpc", "http2" or "https"
@@ -2044,17 +1983,8 @@ write:
 read:
   # -- Enable the component. Requires `loki.deploymentMode` to be set to `SimpleScalable`.
   enabled: true
-  # -- Kind of read deployment. StatefulSet and Deployment are supported.
-  kind: Deployment
-  # -- Override for the read fullname. By default, this is generated using the fullname template with "-backend"
-  fullnameOverride: '{{ include "loki.name" . }}-read'
   # -- Number of replicas for the read
   replicas: 3
-  # -- UpdateStrategy or Strategy for the read.
-  strategy:
-    rollingUpdate:
-      maxSurge: 0
-      maxUnavailable: 1
   autoscaling:
     # -- Enable autoscaling for the read, this is only used if `queryIndex.enabled: true`
     enabled: false
@@ -2133,12 +2063,6 @@ read:
     sessionAffinity: ""
     # -- Session affinity config for read Service
     sessionAffinityConfig: {}
-    # -- ipFamilyPolicy for read Service
-    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
-    ipFamilyPolicy: ""
-    # -- ipFamilies for read Service
-    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
-    ipFamilies: []
     # -- Adds the appProtocol field to the read service. This allows read to work with istio protocol selection.
     appProtocol:
       # -- Set the optional grpc service protocol. Ex: "grpc", "http2" or "https"
@@ -2223,20 +2147,8 @@ read:
 backend:
   # -- Enable the component. Requires `loki.deploymentMode` to be set to `SimpleScalable`.
   enabled: true
-  # -- Kind of backend workload. StatefulSet and Deployment are supported.
-  kind: StatefulSet
-  # -- Override for the backend fullname. By default, this is generated using the fullname template with "-backend"
-  fullnameOverride: '{{ include "loki.name" . }}-backend'
-  # -- EXPERIMENTAL: Enable creating a Job to recreate the backend StatefulSet when the compactor configuration is changed.
-  ## Only applicable if `compactor.kind` is StatefulSet. Useful for PVC size changes, which require recreating the StatefulSet.
-  statefulSetRecreateJob:
-    enabled: false
   # -- Number of replicas for the backend
   replicas: 3
-  # -- UpdateStrategy or Strategy for the backend.
-  strategy:
-    rollingUpdate:
-      partition: 0
   # -- Whether to enable the rules sidecar
   sidecar: true
   # -- Set this toggle to false to opt out of automounting API credentials for the service account
@@ -2319,12 +2231,6 @@ backend:
     sessionAffinity: ""
     # -- Session affinity config for backend Service
     sessionAffinityConfig: {}
-    # -- ipFamilyPolicy for backend Service
-    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
-    ipFamilyPolicy: ""
-    # -- ipFamilies for backend Service
-    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
-    ipFamilies: []
     # -- Adds the appProtocol field to the backend service. This allows backend to work with istio protocol selection.
     appProtocol:
       # -- Set the optional grpc service protocol. Ex: "grpc", "http2" or "https"
@@ -2389,8 +2295,6 @@ backend:
   podManagementPolicy: "Parallel"
   persistence:
     # -- Enable volume claims in pod spec
-    enabled: false
-    # -- Enable volume claims in pod spec. Deprecated in favor of `persistence.enabled`.
     volumeClaimsEnabled: true
     # -- Set access modes on the PersistentVolumeClaim
     accessModes:
@@ -2398,10 +2302,6 @@ backend:
     # -- Parameters used for the `data` volume when volumeClaimEnabled if false
     dataVolumeParameters:
       emptyDir: {}
-    # -- What to do with the volume when the StatefulSet is scaled down.
-    whenScaled: Delete
-    # -- What to do with the volumes when the StatefulSet is deleted.
-    whenDeleted: Delete
     # -- Enable StatefulSetAutoDeletePVC feature
     enableStatefulSetAutoDeletePVC: true
     # -- Size of persistent disk
@@ -2448,22 +2348,8 @@ backend:
 ingester:
   # -- Enable the component. Requires `loki.deploymentMode` to be set to `Distributed`.
   enabled: true
-  # -- Kind of compactor deployment. StatefulSet and Deployment are supported.
-  kind: StatefulSet
-  # -- EXPERIMENTAL: Enable creating a Job to recreate the ingester StatefulSet
-  ## Only applicable if `ingester.kind` is StatefulSet. Useful for PVC size changes, which require recreating the StatefulSet.
-  statefulSetRecreateJob:
-    enabled: false
-  # -- UpdateStrategy or Strategy for the ingester.
-  strategy:
-    type: RollingUpdate
-  # -- PodManagementPolicy for the ingester StatefulSet. Only applicable if `compactor.kind` is StatefulSet.
-  ## OrderedReady and Parallel are supported.
-  podManagementPolicy: Parallel
   # -- Number of replicas for the ingester, when zoneAwareReplication.enabled is true, the total
   # number of replicas will match this value with each zone having 1/3rd of the total replicas.
-  # Set to null to omit spec.replicas from the StatefulSet, allowing an external controller
-  # (e.g. HPA, KEDA, rollout-operator) to manage replica counts without Helm resetting them.
   replicas: 0
   # -- DNSConfig for ingester pods
   dnsConfig: {}
@@ -2532,11 +2418,8 @@ ingester:
     tag: null
   # -- Command to execute instead of defined in Docker image
   command: null
-  priorityClassName: null
-  # -- Labels for ingester
   labels: {}
-  # -- Annotations for ingester
-  annotations: {}
+  priorityClassName: null
   # -- Labels for ingester pods
   podLabels: {}
   # -- Annotations for ingester pods
@@ -2564,12 +2447,6 @@ ingester:
     sessionAffinity: ""
     # -- Session affinity config for ingester Service
     sessionAffinityConfig: {}
-    # -- ipFamilyPolicy for ingester Service
-    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
-    ipFamilyPolicy: ""
-    # -- ipFamilies for ingester Service
-    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
-    ipFamilies: []
     # -- Adds the appProtocol field to the ingester service. This allows ingester to work with istio protocol selection.
     appProtocol:
       # -- Set the optional grpc service protocol. Ex: "grpc", "http2" or "https"
@@ -2868,12 +2745,6 @@ distributor:
     sessionAffinity: ""
     # -- Session affinity config for distributor Service
     sessionAffinityConfig: {}
-    # -- ipFamilyPolicy for distributor Service
-    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
-    ipFamilyPolicy: ""
-    # -- ipFamilies for distributor Service
-    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
-    ipFamilies: []
     # -- Adds the appProtocol field to the distributor service. This allows distributor to work with istio protocol selection.
     appProtocol:
       # -- Set the optional grpc service protocol. Ex: "grpc", "http2" or "https"
@@ -2957,16 +2828,8 @@ distributor:
 querier:
   # -- Enable the component. Requires `loki.deploymentMode` to be set to `Distributed`.
   enabled: true
-  # -- Kind of compactor deployment. StatefulSet and Deployment are supported.
-  kind: Deployment
   # -- Number of replicas for the querier
   replicas: 0
-  # -- Strategy for the querier.
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 0
-      maxUnavailable: 1
   # -- hostAliases to add
   hostAliases: []
   #  - ip: 1.2.3.4
@@ -3043,10 +2906,6 @@ querier:
   command: null
   # -- The name of the PriorityClass for querier pods
   priorityClassName: null
-  # -- Labels for querier
-  labels: {}
-  # -- Annotations for querier
-  annotations: {}
   # -- Labels for querier pods
   podLabels: {}
   # -- Annotations for querier pods
@@ -3073,12 +2932,6 @@ querier:
     sessionAffinity: ""
     # -- Session affinity config for querier Service
     sessionAffinityConfig: {}
-    # -- ipFamilyPolicy for querier Service
-    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
-    ipFamilyPolicy: ""
-    # -- ipFamilies for querier Service
-    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
-    ipFamilies: []
     # -- Adds the appProtocol field to the querier service. This allows querier to work with istio protocol selection.
     appProtocol:
       # -- Set the optional grpc service protocol. Ex: "grpc", "http2" or "https"
@@ -3173,16 +3026,8 @@ querier:
 queryFrontend:
   # -- Enable the component. Requires `loki.deploymentMode` to be set to `Distributed`.
   enabled: true
-  # -- Kind of compactor deployment. StatefulSet and Deployment are supported.
-  kind: Deployment
   # -- Number of replicas for the query-frontend
   replicas: 0
-  # -- Strategy for the querier.
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 0
-      maxUnavailable: 1
   # -- hostAliases to add
   hostAliases: []
   #  - ip: 1.2.3.4
@@ -3250,10 +3095,6 @@ queryFrontend:
   command: null
   # -- The name of the PriorityClass for query-frontend pods
   priorityClassName: null
-  # -- Labels for query-frontend
-  labels: {}
-  # -- Annotations for query-frontend
-  annotations: {}
   # -- Labels for query-frontend pods
   podLabels: {}
   # -- Annotations for query-frontend pods
@@ -3280,12 +3121,6 @@ queryFrontend:
     sessionAffinity: ""
     # -- Session affinity config for query-frontend Service
     sessionAffinityConfig: {}
-    # -- ipFamilyPolicy for query-frontend Service
-    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
-    ipFamilyPolicy: ""
-    # -- ipFamilies for query-frontend Service
-    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
-    ipFamilies: []
     # -- Adds the appProtocol field to the query-frontend service. This allows query-frontend to work with istio protocol selection.
     appProtocol:
       # -- Set the optional grpc service protocol. Ex: "grpc", "http2" or "https"
@@ -3370,18 +3205,10 @@ queryFrontend:
 queryScheduler:
   # -- Enable the component. Requires `loki.deploymentMode` to be set to `Distributed`.
   enabled: true
-  # -- Kind of query-scheduler deployment. StatefulSet and Deployment are supported.
-  kind: Deployment
   # -- Number of replicas for the query-scheduler.
   # It should be lower than `-querier.max-concurrent` to avoid generating back-pressure in queriers;
   # it's also recommended that this value evenly divides the latter
   replicas: 0
-  # -- Strategy for the query-scheduler.
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 0
-      maxUnavailable: 1
   # -- DNSConfig for query-scheduler
   dnsConfig: {}
   # -- hostAliases to add
@@ -3400,10 +3227,6 @@ queryScheduler:
     tag: null
   # -- The name of the PriorityClass for query-scheduler pods
   priorityClassName: null
-  # -- Labels for query-scheduler
-  labels: {}
-  # -- Annotations for query-scheduler
-  annotations: {}
   # -- Labels for query-scheduler pods
   podLabels: {}
   # -- Annotations for query-scheduler pods
@@ -3430,12 +3253,6 @@ queryScheduler:
     sessionAffinity: ""
     # -- Session affinity config for query-scheduler Service
     sessionAffinityConfig: {}
-    # -- ipFamilyPolicy for query-scheduler Service
-    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
-    ipFamilyPolicy: ""
-    # -- ipFamilies for query-scheduler Service
-    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
-    ipFamilies: []
     # -- Adds the appProtocol field to the query-scheduler service. This allows query-scheduler to work with istio protocol selection.
     appProtocol:
       # -- Set the optional grpc service protocol. Ex: "grpc", "http2" or "https"
@@ -3515,12 +3332,6 @@ queryScheduler:
 indexGateway:
   # -- Enable the component. Requires `loki.deploymentMode` to be set to `Distributed`.
   enabled: true
-  # -- Kind of index-gateway deployment. StatefulSet and Deployment are supported.
-  kind: StatefulSet
-  # -- EXPERIMENTAL: Enable creating a Job to recreate the compactor StatefulSet when the compactor configuration is changed.
-  ## Only applicable if `compactor.kind` is StatefulSet. Useful for PVC size changes, which require recreating the StatefulSet.
-  statefulSetRecreateJob:
-    enabled: false
   # -- Number of replicas for the index-gateway
   replicas: 0
   # -- Whether the index gateway should join the memberlist hashring
@@ -3543,10 +3354,6 @@ indexGateway:
     tag: null
   # -- The name of the PriorityClass for index-gateway pods
   priorityClassName: null
-  # -- Labels for index-gateway
-  labels: {}
-  # -- Annotations for index-gateway
-  annotations: {}
   # -- Labels for index-gateway pods
   podLabels: {}
   # -- Annotations for index-gateway pods
@@ -3573,12 +3380,6 @@ indexGateway:
     sessionAffinity: ""
     # -- Session affinity config for index-gateway Service
     sessionAffinityConfig: {}
-    # -- ipFamilyPolicy for index-gateway Service
-    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
-    ipFamilyPolicy: ""
-    # -- ipFamilies for index-gateway Service
-    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
-    ipFamilies: []
     # -- Adds the appProtocol field to the index-gateway service. This allows index-gateway to work with istio protocol selection.
     appProtocol:
       # -- Set the optional grpc service protocol. Ex: "grpc", "http2" or "https"
@@ -3670,8 +3471,8 @@ indexGateway:
     grpc: ""
   # -- trafficDistribution for index-gateway service
   trafficDistribution: ""
-  # -- UpdateStrategy for the index-gateway workload.
-  strategy:
+  # -- UpdateStrategy for the indexGateway StatefulSet.
+  updateStrategy:
     # -- One of  'OnDelete' or 'RollingUpdate'
     type: RollingUpdate
     # -- Optional for updateStrategy.type=RollingUpdate. See [Partitioned rolling updates](https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#partitions) in the StatefulSet docs for details.
@@ -3698,10 +3499,6 @@ compactor:
   enabled: true
   # -- Kind of compactor deployment. StatefulSet and Deployment are supported.
   kind: StatefulSet
-  # -- EXPERIMENTAL: Enable creating a Job to recreate the compactor StatefulSet when the compactor configuration is changed.
-  ## Only applicable if `compactor.kind` is StatefulSet. Useful for PVC size changes, which require recreating the StatefulSet.
-  statefulSetRecreateJob:
-    enabled: false
   # -- Number of replicas for the compactor
   replicas: 0
   # -- UpdateStrategy or Strategy for the compactor.
@@ -3773,12 +3570,6 @@ compactor:
     sessionAffinity: ""
     # -- Session affinity config for compactor Service
     sessionAffinityConfig: {}
-    # -- ipFamilyPolicy for compactor Service
-    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
-    ipFamilyPolicy: ""
-    # -- ipFamilies for compactor Service
-    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
-    ipFamilies: []
     # -- Adds the appProtocol field to the compactor service. This allows compactor to work with istio protocol selection.
     appProtocol:
       # -- Set the optional grpc service protocol. Ex: "grpc", "http2" or "https"
@@ -3845,7 +3636,7 @@ compactor:
     # -- Parameters used for the `data` volume when volumeClaimEnabled if false
     dataVolumeParameters:
       emptyDir: {}
-    # -- List of the compactor PVCs. Deprecated in favor of `compactor.persistence.dataVolumeParameters` and `compactor.persistence.size`.
+    # -- List of the compactor PVCs
     # @notationType -- list
     claims:
       - name: data
@@ -3947,12 +3738,6 @@ bloomGateway:
     sessionAffinity: ""
     # -- Session affinity config for bloom-gateway Service
     sessionAffinityConfig: {}
-    # -- ipFamilyPolicy for bloom-gateway Service
-    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
-    ipFamilyPolicy: ""
-    # -- ipFamilies for bloom-gateway Service
-    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
-    ipFamilies: []
     # -- Adds the appProtocol field to the bloom-gateway service. This allows bloom-gateway to work with istio protocol selection.
     appProtocol:
       # -- Set the optional grpc service protocol. Ex: "grpc", "http2" or "https"
@@ -4105,12 +3890,6 @@ bloomPlanner:
     sessionAffinity: ""
     # -- Session affinity config for bloom-planner Service
     sessionAffinityConfig: {}
-    # -- ipFamilyPolicy for bloom-planner Service
-    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
-    ipFamilyPolicy: ""
-    # -- ipFamilies for bloom-planner Service
-    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
-    ipFamilies: []
     # -- Adds the appProtocol field to the bloom-planner service. This allows bloom-planner to work with istio protocol selection.
     appProtocol:
       # -- Set the optional grpc service protocol. Ex: "grpc", "http2" or "https"
@@ -4208,10 +3987,6 @@ bloomBuilder:
   enabled: false
   # -- Kind of compactor deployment. StatefulSet and Deployment are supported.
   kind: Deployment
-  # -- Enable creating a Job to recreate the compactor StatefulSet when the compactor configuration is changed.
-  ## Only applicable if `compactor.kind` is StatefulSet. Useful for PVC size changes, which require recreating the StatefulSet.
-  statefulSetRecreateJob:
-    enabled: false
   # -- Number of replicas for the bloom-builder
   replicas: 0
   # -- hostAliases to add
@@ -4310,12 +4085,6 @@ bloomBuilder:
     sessionAffinity: ""
     # -- Session affinity config for bloom-builder Service
     sessionAffinityConfig: {}
-    # -- ipFamilyPolicy for bloom-builder Service
-    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
-    ipFamilyPolicy: ""
-    # -- ipFamilies for bloom-builder Service
-    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
-    ipFamilies: []
     # -- Adds the appProtocol field to the bloom-builder service. This allows bloom-builder to work with istio protocol selection.
     appProtocol:
       # -- Set the optional grpc service protocol. Ex: "grpc", "http2" or "https"
@@ -4421,18 +4190,8 @@ bloomBuilder:
 patternIngester:
   # -- Enable the component. Requires `loki.deploymentMode` to be set to `Distributed`.
   enabled: false
-  # -- Kind of compactor deployment. StatefulSet and Deployment are supported.
-  kind: StatefulSet
-  # -- EXPERIMENTAL: Enable creating a Job to recreate the compactor StatefulSet when the compactor configuration is changed.
-  ## Only applicable if `compactor.kind` is StatefulSet. Useful for PVC size changes, which require recreating the StatefulSet.
-  statefulSetRecreateJob:
-    enabled: false
   # -- Number of replicas for the pattern ingester
   replicas: 0
-  # -- UpdateStrategy or Strategy for the pattern ingester.
-  strategy:
-    rollingUpdate:
-      partition: 0
   # -- DNSConfig for pattern ingester pods
   dnsConfig: {}
   # -- hostAliases to add
@@ -4453,10 +4212,6 @@ patternIngester:
   command: null
   # -- The name of the PriorityClass for pattern ingester pods
   priorityClassName: null
-  # -- Labels for pattern ingester
-  labels: {}
-  # -- Annotations for pattern ingester
-  annotations: {}
   # -- Labels for pattern ingester pods
   podLabels: {}
   # -- Annotations for pattern ingester pods
@@ -4578,12 +4333,6 @@ patternIngester:
 ruler:
   # -- The ruler component is optional and can be disabled if desired.
   enabled: true
-  # -- Kind of ruler deployment. StatefulSet and Deployment are supported.
-  kind: StatefulSet
-  # -- EXPERIMENTAL: Enable creating a Job to recreate the ruler StatefulSet when the ruler configuration is changed.
-  ## Only applicable if `ruler.kind` is StatefulSet. Useful for PVC size changes, which require recreating the StatefulSet.
-  statefulSetRecreateJob:
-    enabled: false
   # -- Whether to enable the rules sidecar
   sidecar: false
   # -- Number of replicas for the ruler
@@ -4606,11 +4355,7 @@ ruler:
   command: null
   # -- The name of the PriorityClass for ruler pods
   priorityClassName: null
-  # -- Labels for ruler
-  labels: {}
-  # -- Annotations for ruler
-  annotations: {}
-  # -- Labels for ruler pods
+  # -- Labels for compactor pods
   podLabels: {}
   # -- Annotations for ruler pods
   podAnnotations: {}
@@ -4633,12 +4378,6 @@ ruler:
     sessionAffinity: ""
     # -- Session affinity config for ruler Service
     sessionAffinityConfig: {}
-    # -- ipFamilyPolicy for ruler Service
-    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
-    ipFamilyPolicy: ""
-    # -- ipFamilies for ruler Service
-    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
-    ipFamilies: []
     # -- Adds the appProtocol field to the ruler service. This allows ruler to work with istio protocol selection.
     appProtocol:
       # -- Set the optional grpc service protocol. Ex: "grpc", "http2" or "https"
@@ -4807,8 +4546,6 @@ ruler:
 overridesExporter:
   # -- The overrides-exporter component is optional and can be disabled if desired.
   enabled: false
-  # -- Kind of backend workload. StatefulSet and Deployment are supported.
-  kind: Deployment
   # -- Number of replicas for the overrides-exporter
   replicas: 0
   # -- DNSConfig for overrides-exporter
@@ -4854,12 +4591,6 @@ overridesExporter:
     sessionAffinity: ""
     # -- Session affinity config for overrides-exporter Service
     sessionAffinityConfig: {}
-    # -- ipFamilyPolicy for overrides-exporter Service
-    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
-    ipFamilyPolicy: ""
-    # -- ipFamilies for overrides-exporter Service
-    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
-    ipFamilies: []
     # -- Adds the appProtocol field to the overrides-exporter service. This allows overrides-exporter to work with istio protocol selection.
     appProtocol:
       # -- Set the optional grpc service protocol. Ex: "grpc", "http2" or "https"
@@ -4942,7 +4673,7 @@ memcached:
     # -- Memcached Docker image repository
     repository: memcached
     # -- Memcached Docker image tag
-    tag: 1.6.42-alpine
+    tag: 1.6.41-alpine
     # -- Memcached Docker image pull policy
     pullPolicy: IfNotPresent
   # -- The SecurityContext override for memcached pods
@@ -5461,18 +5192,7 @@ rollout_operator:
     runAsNonRoot: true
     seccompProfile:
       type: RuntimeDefault
-  webhooks:
-    # -- Enable the rollout-operator webhooks. See https://github.com/grafana/rollout-operator/#webhooks.
-    # Note that the webhooks require custom resource definitions. If upgrading, manually apply the files in the `crds` directory.
-    enabled: true
-    # -- Timeout in seconds for the prepare-downscale mutating webhook. Must be between 1 and 30.
-    timeoutSeconds: 10
-    # -- Validating and mutating webhook failure policy. `Ignore` or `Fail`.
-    failurePolicy: "Ignore"
-# -- Ignore MinIO deprecation validation when `minio.enabled=true`. This is a temporary compatibility escape hatch.
-ignoreMinioDeprecation: false
-
-# -- Configuration for the minio subchart (deprecated)
+# -- Configuration for the minio subchart
 minio:
   enabled: false
   replicas: 1
@@ -5546,7 +5266,7 @@ sidecar:
     # -- The Docker registry and image for the k8s sidecar
     repository: kiwigrid/k8s-sidecar
     # -- Docker image tag
-    tag: 2.7.3
+    tag: 2.7.1
     # -- Docker image sha. If empty, no sha will be used
     sha: ""
     # -- Docker image pull policy
@@ -5635,20 +5355,28 @@ sidecar:
 
 # -- Monitoring section determines which monitoring features to enable
 monitoring:
+  # -- Alternative namespace to deploy all monitoring resources (ServiceMonitor, PrometheusRule, ConfigMap dashboards) in.
+  # Defaults to the release namespace.
+  namespace: null
+
   # Dashboards for monitoring Loki
   dashboards:
-    # -- If enabled, create configmap with dashboards for monitoring Loki
+    # -- If enabled, create configmap resources with dashboards for monitoring Loki
     enabled: false
-    # -- Alternative namespace to create dashboards ConfigMap in
-    namespace: null
-    # -- Additional annotations for the dashboards ConfigMap
+    # -- Additional annotations for the dashboards ConfigMap resources
     annotations: {}
-    # -- Labels for the dashboards ConfigMap
+    # -- Labels for the dashboards ConfigMap resources
     labels:
       grafana_dashboard: "1"
     multiCluster:
-      # -- Enable multi-cluster support for the dashboards.
+      # -- When enabled, adds a 'cluster' label to scraped metrics and recording
+      # rules, and shows the cluster variable in dashboards. Intended for
+      # environments with multiple Kubernetes clusters. Set clusterName to the
+      # name of the Kubernetes cluster this Loki release is running in.
       enabled: false
+      # -- Value for the 'cluster' label. Supports Helm templating.
+      # e.g. clusterName: '{{ .Values.global.clusterName }}'
+      clusterName: ""
 
     # -- Timezone for the default dashboards
     defaultDashboardsTimezone: utc
@@ -5685,71 +5413,62 @@ monitoring:
       folderRef: null
   # -- Recording rules for monitoring Loki, required for some dashboards
   rules:
-    # -- If enabled, create PrometheusRule resources with Loki recording rules
+    # -- If enabled, create a PrometheusRule resource with Loki recording rules
     enabled: false
-
-    configs:
-      LokiRequestErrors:
-        enabled: true
-        for: 15m
-        lookbackPeriod: 2m
-        severity: critical
-        threshold: 10
-      LokiRequestPanics:
-        enabled: true
-        lookbackPeriod: 10m
-        severity: critical
-        threshold: 0
-      LokiRequestLatency:
-        enabled: true
-        for: 15m
-        severity: critical
-        threshold: 1
-      LokiTooManyCompactorsRunning:
-        enabled: true
-        for: 5m
-        severity: warning
-      LokiCanaryLatency:
-        enabled: true
-        for: 15m
-        lookbackPeriod: 5m
-        severity: warning
-        threshold: 5
-
-    # -- Alternative namespace to create PrometheusRule resources in
-    namespace: null
-    # -- Additional annotations for the rules PrometheusRule resource
-    annotations: {}
-    # -- Additional labels for the rules PrometheusRule resource
+    # -- Additional labels for the PrometheusRule resource
     labels: {}
-    # -- Additional annotations for PrometheusRule alerts
-    additionalRuleAnnotations: {}
-    # e.g.:
-    # additionalRuleAnnotations:
-    #   runbook_url: "https://runbooks.example.com/oncall/loki"
-    #   summary: "What this alert means and how to respond"
-    # -- Additional labels for PrometheusRule alerts
+    # -- Additional annotations for the PrometheusRule resource
+    annotations: {}
+    # -- Additional labels applied to all individual recording rules
     additionalRuleLabels: {}
-    # -- Additional groups to add to the rules file
-    additionalGroups: []
-    # - name: additional-loki-rules
-    #   rules:
-    #     - record: job:loki_request_duration_seconds_bucket:sum_rate
-    #       expr: sum(rate(loki_request_duration_seconds_bucket[1m])) by (le, job)
-    #     - record: job_route:loki_request_duration_seconds_bucket:sum_rate
-    #       expr: sum(rate(loki_request_duration_seconds_bucket[1m])) by (le, job, route)
-    #     - record: node_namespace_pod_container:container_cpu_usage_seconds_total:sum_rate
-    #       expr: sum(rate(container_cpu_usage_seconds_total[1m])) by (node, namespace, pod, container)
-
+    # -- Additional annotations applied to all individual recording rules
+    additionalRuleAnnotations: {}
+    # -- Extra label dimensions added to all by() aggregation clauses in recording rules
     additionalAggregationLabels: []
+
+  # -- Alert rules for monitoring Loki
+  alerts:
+    # -- If enabled, create a PrometheusRule resource with Loki alert rules
+    enabled: false
+    # -- Additional labels for the alerts PrometheusRule resource
+    labels: {}
+    # -- Additional annotations for the alerts PrometheusRule resource
+    annotations: {}
+    # -- Selectively disable individual alerts by name.
+    # e.g.: disabled: { LokiRequestErrors: true }
+    disabled: {}
+    # -- Override for/severity on individual alerts.
+    # e.g.: overrides: { LokiRequestErrors: { for: 5m, severity: warning } }
+    overrides: {}
+    # -- Global keepFiringFor applied to all alert rules
+    keepFiringFor: ""
+    # -- Additional labels applied to all individual alert rules
+    additionalRuleLabels: {}
+    # -- Additional annotations applied to all individual alert rules
+    additionalRuleAnnotations: {}
+    # -- Extra label dimensions added to all by() aggregation clauses in alert expressions
+    additionalAggregationLabels: []
+
+  # -- Additional PrometheusRule objects to create alongside the chart-managed ones.
+  # Each key becomes the resource name suffix; the value must contain a 'groups' key
+  # with standard Prometheus rule groups. Can contain both recording rules and alerts.
+  # e.g.:
+  # additionalPrometheusRules:
+  #   my-alerts:
+  #     groups:
+  #       - name: my-loki-alerts
+  #         rules:
+  #           - alert: MyLokiAlert
+  #             expr: 'up{job="loki"} == 0'
+  additionalPrometheusRules: {}
+
   # -- ServiceMonitor configuration
   serviceMonitor:
     # -- If enabled, ServiceMonitor resources for Prometheus Operator are created
     enabled: false
-    # -- To disable setting a 'cluster' label in metrics, set to 'null'.
-    # To overwrite the 'cluster' label with your own value, set to a non-empty string.
-    # Keep empty string "" to have the default value in the 'cluster' label, which is the helm release name for Loki.
-    clusterLabel: ""
+    # -- Value for the app_instance label injected into scraped metrics and recording rules.
+    # Supports Helm templating.
+    appInstanceLabel: '{{ include "loki.fullname" . }}'
     # -- Namespace selector for ServiceMonitor resources
     namespaceSelector: {}
     # -- ServiceMonitor annotations
@@ -5812,12 +5531,6 @@ tableManager:
     sessionAffinity: ""
     # -- Session affinity config for table-manager Service
     sessionAffinityConfig: {}
-    # -- ipFamilyPolicy for table-manager Service
-    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
-    ipFamilyPolicy: ""
-    # -- ipFamilies for table-manager Service
-    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
-    ipFamilies: []
     # -- Adds the appProtocol field to the table-manager service. This allows table-manager to work with istio protocol selection.
     appProtocol:
       # -- Set the optional grpc service protocol. Ex: "grpc", "http2" or "https"
