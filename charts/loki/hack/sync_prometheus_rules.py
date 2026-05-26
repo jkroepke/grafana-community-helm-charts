@@ -209,8 +209,8 @@ cluster: "{{ tpl .Values.monitoring.dashboards.multiCluster.clusterName $ }}"
   {{- toYaml . | nindent 8 }}
 {{- end }}""" % monitoring_path, " " * (indent + label_indent * 2))
 
-    additional_rule_labels_condition_start = ""
-    additional_rule_labels_condition_end = ""
+    additional_rule_labels_condition_start = "\n" + " " * (indent + label_indent * 2) + "{{- if or (and .Values.monitoring.dashboards.multiCluster.enabled .Values.monitoring.dashboards.multiCluster.clusterName) .Values.%s.additionalRuleLabels }}" % monitoring_path
+    additional_rule_labels_condition_end = "\n" + " " * (indent + label_indent * 2) + "{{- end }}"
     # labels: cannot be null, if a rule does not have any labels by default, the labels block
     # should only be added if there are .Values.monitoring.rules.additionalRuleLabels defined
     rule_seperator = "\n" + " " * indent + "-.*"

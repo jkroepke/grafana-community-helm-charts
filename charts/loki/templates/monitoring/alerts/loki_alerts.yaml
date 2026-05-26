@@ -43,11 +43,13 @@ spec:
       {{- end }}
       labels:
         severity: {{ dig "LokiRequestErrors" "severity" "critical" .Values.monitoring.alerts.overrides }}
+        {{- if or (and .Values.monitoring.dashboards.multiCluster.enabled .Values.monitoring.dashboards.multiCluster.clusterName) .Values.monitoring.alerts.additionalRuleLabels }}
         {{- if and .Values.monitoring.dashboards.multiCluster.enabled .Values.monitoring.dashboards.multiCluster.clusterName }}
         cluster: "{{ tpl .Values.monitoring.dashboards.multiCluster.clusterName $ }}"
         {{- end }}
         {{- with .Values.monitoring.alerts.additionalRuleLabels }}
           {{- toYaml . | nindent 8 }}
+        {{- end }}
         {{- end }}
 {{- end }}
 {{- if not (.Values.monitoring.alerts.disabled.LokiRequestPanics | default false) }}
@@ -63,11 +65,13 @@ spec:
       expr: sum(increase(loki_panic_total[10m])) by ({{ range $.Values.monitoring.alerts.additionalAggregationLabels }}{{ . }},{{ end }}{{ $.Values.monitoring.appInstanceLabelName }}, namespace, job) > 0
       labels:
         severity: {{ dig "LokiRequestPanics" "severity" "critical" .Values.monitoring.alerts.overrides }}
+        {{- if or (and .Values.monitoring.dashboards.multiCluster.enabled .Values.monitoring.dashboards.multiCluster.clusterName) .Values.monitoring.alerts.additionalRuleLabels }}
         {{- if and .Values.monitoring.dashboards.multiCluster.enabled .Values.monitoring.dashboards.multiCluster.clusterName }}
         cluster: "{{ tpl .Values.monitoring.dashboards.multiCluster.clusterName $ }}"
         {{- end }}
         {{- with .Values.monitoring.alerts.additionalRuleLabels }}
           {{- toYaml . | nindent 8 }}
+        {{- end }}
         {{- end }}
 {{- end }}
 {{- if not (.Values.monitoring.alerts.disabled.LokiRequestLatency | default false) }}
@@ -87,11 +91,13 @@ spec:
       {{- end }}
       labels:
         severity: {{ dig "LokiRequestLatency" "severity" "critical" .Values.monitoring.alerts.overrides }}
+        {{- if or (and .Values.monitoring.dashboards.multiCluster.enabled .Values.monitoring.dashboards.multiCluster.clusterName) .Values.monitoring.alerts.additionalRuleLabels }}
         {{- if and .Values.monitoring.dashboards.multiCluster.enabled .Values.monitoring.dashboards.multiCluster.clusterName }}
         cluster: "{{ tpl .Values.monitoring.dashboards.multiCluster.clusterName $ }}"
         {{- end }}
         {{- with .Values.monitoring.alerts.additionalRuleLabels }}
           {{- toYaml . | nindent 8 }}
+        {{- end }}
         {{- end }}
 {{- end }}
 {{- if not (.Values.monitoring.alerts.disabled.LokiTooManyCompactorsRunning | default false) }}
@@ -111,11 +117,13 @@ spec:
       {{- end }}
       labels:
         severity: {{ dig "LokiTooManyCompactorsRunning" "severity" "warning" .Values.monitoring.alerts.overrides }}
+        {{- if or (and .Values.monitoring.dashboards.multiCluster.enabled .Values.monitoring.dashboards.multiCluster.clusterName) .Values.monitoring.alerts.additionalRuleLabels }}
         {{- if and .Values.monitoring.dashboards.multiCluster.enabled .Values.monitoring.dashboards.multiCluster.clusterName }}
         cluster: "{{ tpl .Values.monitoring.dashboards.multiCluster.clusterName $ }}"
         {{- end }}
         {{- with .Values.monitoring.alerts.additionalRuleLabels }}
           {{- toYaml . | nindent 8 }}
+        {{- end }}
         {{- end }}
 {{- end }}
 {{- if not (.Values.monitoring.alerts.disabled.LokiCompactorHasNotSuccessfullyRunCompaction | default false) }}
@@ -142,11 +150,13 @@ spec:
       {{- end }}
       labels:
         severity: {{ dig "LokiCompactorHasNotSuccessfullyRunCompaction" "severity" "critical" .Values.monitoring.alerts.overrides }}
+        {{- if or (and .Values.monitoring.dashboards.multiCluster.enabled .Values.monitoring.dashboards.multiCluster.clusterName) .Values.monitoring.alerts.additionalRuleLabels }}
         {{- if and .Values.monitoring.dashboards.multiCluster.enabled .Values.monitoring.dashboards.multiCluster.clusterName }}
         cluster: "{{ tpl .Values.monitoring.dashboards.multiCluster.clusterName $ }}"
         {{- end }}
         {{- with .Values.monitoring.alerts.additionalRuleLabels }}
           {{- toYaml . | nindent 8 }}
+        {{- end }}
         {{- end }}
 {{- end }}
 {{- if not (.Values.monitoring.alerts.disabled.LokiCompactorHasNotSuccessfullyRunCompaction | default false) }}
@@ -174,11 +184,13 @@ spec:
       {{- end }}
       labels:
         severity: {{ dig "LokiCompactorHasNotSuccessfullyRunCompaction" "severity" "critical" .Values.monitoring.alerts.overrides }}
+        {{- if or (and .Values.monitoring.dashboards.multiCluster.enabled .Values.monitoring.dashboards.multiCluster.clusterName) .Values.monitoring.alerts.additionalRuleLabels }}
         {{- if and .Values.monitoring.dashboards.multiCluster.enabled .Values.monitoring.dashboards.multiCluster.clusterName }}
         cluster: "{{ tpl .Values.monitoring.dashboards.multiCluster.clusterName $ }}"
         {{- end }}
         {{- with .Values.monitoring.alerts.additionalRuleLabels }}
           {{- toYaml . | nindent 8 }}
+        {{- end }}
         {{- end }}
 {{- end }}
 {{- end }}
