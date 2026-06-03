@@ -107,3 +107,13 @@ tests:
           path: subjects[0].name
           value: RELEASE-NAME-loki-ruler
         documentIndex: 1
+
+  - it: subject uses custom serviceAccount.name when ruler serviceAccount is created
+    set:
+      ruler.serviceAccount.create: true
+      ruler.serviceAccount.name: ruler-custom-sa
+    asserts:
+      - equal:
+          path: subjects[0].name
+          value: ruler-custom-sa
+        documentIndex: 1

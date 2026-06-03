@@ -108,6 +108,15 @@ tests:
           value: RELEASE-NAME-loki
         documentIndex: 1
 
+  - it: subject uses backend generated service account name when backend account is created
+    set:
+      backend.serviceAccount.create: true
+    asserts:
+      - equal:
+          path: subjects[0].name
+          value: RELEASE-NAME-loki-backend
+        documentIndex: 1
+
   - it: subject uses custom serviceAccount.name when set
     set:
       serviceAccount.name: my-custom-sa
