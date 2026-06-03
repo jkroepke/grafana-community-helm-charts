@@ -5685,6 +5685,12 @@ monitoring:
       # -- If enabled, GrafanaOperator resources for Grafana Operator are created to deploy the dashboards.
       enabled: false
 
+      # -- Additional annotations for the GrafanaOperator resources
+      annotations: {}
+
+      # -- Additional labels for the GrafanaOperator resources
+      labels: {}
+
       # -- How frequently the operator should resync resources (in duration format)
       resyncPeriod: 10m
 
