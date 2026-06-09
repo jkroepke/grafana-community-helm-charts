@@ -2,13 +2,14 @@
 Pod helper
 */}}
 
-{{- define "loki.podTemplate" }}
-{{- $target := .target }}
-{{- $ctx := .ctx }}
-{{- $component := .component }}
-{{- $args := .args }}
-{{- $rolloutZoneName := .rolloutZoneName | default "" }}
-{{- with $ctx }}
+{{- define "loki.podTemplate" -}}
+{{- $target := .target -}}
+{{- $ctx := .ctx -}}
+{{- $component := .component -}}
+{{- $args := .args -}}
+{{- $rolloutZoneName := .rolloutZoneName | default "" -}}
+{{- $memberlist := hasKey . "memberlist" | ternary .memberlist true -}}
+{{- with $ctx -}}
 metadata:
   annotations:
     {{- if ne $target "canary" }}
@@ -21,7 +22,7 @@ metadata:
   labels:
     {{- include "loki.labels" . | nindent 4 }}
     app.kubernetes.io/component: {{ $target }}
-    {{- if ne $target "canary" }}
+    {{- if $memberlist }}
     app.kubernetes.io/part-of: memberlist
     {{- end }}
     {{- if $rolloutZoneName }}
@@ -37,12 +38,9 @@ spec:
     {{- tpl ( . | toYaml) $ctx | nindent 4 }}
   {{- end }}
   serviceAccountName: {{ include "loki.serviceAccountName" (dict "ctx" . "component" (eq $target "single-binary" | ternary .Values $component) "target" (replace "single-binary" "" $target) ) }}
-  {{- if (kindIs "bool" $component.enableServiceLinks) }}
-  enableServiceLinks: {{ $component.enableServiceLinks }}
-  {{- else if (kindIs "bool" .Values.defaults.enableServiceLinks) }}
-  enableServiceLinks: {{ .Values.defaults.enableServiceLinks }}
-  {{- else if (kindIs "bool" .Values.loki.enableServiceLinks) }}
-  enableServiceLinks: {{ .Values.loki.enableServiceLinks }}
+  {{- $esl := include "loki.enableServiceLinks" (dict "component" $component "ctx" .) }}
+  {{- if $esl }}
+  {{ $esl }}
   {{- end }}
   {{- if (kindIs "bool" $component.automountServiceAccountToken) }}
   automountServiceAccountToken: {{ $component.automountServiceAccountToken }}
@@ -80,7 +78,7 @@ spec:
   {{- end }}
   {{- with $component.initContainers }}
   initContainers:
-    {{- if kindIs "map" . }}
+    {{- if kindIs "slice" . }}
       {{- tpl (toYaml .) $ctx | nindent 4 }}
     {{- else if kindIs "string" . }}
       {{- tpl . $ctx | nindent 4 }}
@@ -134,45 +132,50 @@ spec:
     - name: runtime-config
       configMap:
         name: {{ template "loki.name" . }}-runtime
-      {{- if dig "persistence" "ephemeralDataVolume" "enabled" false $component }}
+    {{- if not (or (dig "persistence" "volumeClaimsEnabled" false $component) (dig "persistence" "enabled" false $component)) }}
     - name: {{ eq $target "single-binary" | ternary "storage" "data" }}
-      ephemeral:
-        volumeClaimTemplate:
-          metadata:
-            {{- with $component.ephemeralDataVolume.annotations }}
-            annotations:
-              {{- toYaml . | nindent 14 }}
-            {{- end }}
-            {{- with $component.ephemeralDataVolume.labels }}
-            labels:
-              {{- toYaml . | nindent 14 }}
-            {{- end }}
-          spec:
-            accessModes:
-              {{- toYaml $component.ephemeralDataVolume.accessModes | nindent 12 }}
-            {{- if not (kindIs "invalid" $component.ephemeralDataVolume.storageClass) }}
-            storageClassName: {{ if (eq "-" $component.ephemeralDataVolume.storageClass) }}""{{ else }}{{ $component.ephemeralDataVolume.storageClass }}{{ end }}
-            {{- end }}
-            {{- with $component.ephemeralDataVolume.volumeAttributesClassName }}
-            volumeAttributesClassName: {{ . }}
-            {{- end }}
-            resources:
-              requests:
-                storage: {{ $component.ephemeralDataVolume.size | quote }}
-            {{- with $component.ephemeralDataVolume.selector }}
-            selector:
-              {{- toYaml . | nindent 14 }}
-            {{- end }}
-      {{- else if dig "persistence" "inMemory" false $component }}
-    - name: {{ eq $target "single-binary" | ternary "storage" "data" }}
+      {{- if dig "persistence" "inMemory" false $component }}
       emptyDir:
         medium: Memory
         {{- with $component.persistence.size }}
         sizeLimit: {{ . }}
         {{- end }}
-      {{- else if not (or (dig "persistence" "volumeClaimsEnabled" false $component) (dig "persistence" "enabled" false $component)) }}
+      {{- else }}
+      {{- tpl (toYaml (dig "persistence" "dataVolumeParameters" (dict) $component | default (dict "emptyDir" (dict)))) $ctx | nindent 6 }}
+      {{- end }}
+    {{- else if and (or (dig "persistence" "volumeClaimsEnabled" false $component) (dig "persistence" "enabled" false $component)) (eq (dig "persistence" "type" "" $component) "pvc") (eq $component.kind "Deployment") }}
     - name: {{ eq $target "single-binary" | ternary "storage" "data" }}
-      {{- toYaml (dig "persistence" "dataVolumeParameters" (dict "emptyDir" (dict)) $component) | nindent 6 }}
+      persistentVolumeClaim:
+        claimName: {{ template "loki.fullname" . }}-data
+    {{- else if and (or (dig "persistence" "volumeClaimsEnabled" false $component) (dig "persistence" "enabled" false $component)) (eq (dig "persistence" "type" "" $component) "ephemeral") }}
+    - name: {{ eq $target "single-binary" | ternary "storage" "data" }}
+      ephemeral:
+        volumeClaimTemplate:
+          metadata:
+            {{- with $component.persistence.annotations }}
+            annotations:
+              {{- toYaml . | nindent 14 }}
+            {{- end }}
+            {{- with $component.persistence.labels }}
+            labels:
+              {{- toYaml . | nindent 14 }}
+            {{- end }}
+          spec:
+            accessModes:
+              {{- toYaml $component.persistence.accessModes | nindent 12 }}
+            {{- if not (kindIs "invalid" $component.persistence.storageClass) }}
+            storageClassName: {{ if (eq "-" $component.persistence.storageClass) }}""{{ else }}{{ $component.persistence.storageClass }}{{ end }}
+            {{- end }}
+            {{- with $component.persistence.volumeAttributesClassName }}
+            volumeAttributesClassName: {{ . }}
+            {{- end }}
+            resources:
+              requests:
+                storage: {{ $component.persistence.size | quote }}
+            {{- with $component.persistence.selector }}
+            selector:
+              {{- toYaml . | nindent 14 }}
+            {{- end }}
       {{- end }}
     {{- end }}
     {{- if and $component.sidecar .Values.sidecar.rules.enabled }}
@@ -193,7 +196,7 @@ spec:
         name: {{ include "loki.resourceName" (dict "ctx" $ctx "component" $target "suffix" (include "loki.rulerRulesDirName" $dir)) }}
     {{- end }}
     {{- end }}
-    {{- with (coalesce $component.extraVolumes .Values.defaults.extraVolumes .Values.global.extraVolumes) }}
+    {{- with (concat .Values.global.extraVolumes .Values.defaults.extraVolumes $component.extraVolumes) | uniq }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
   containers:
@@ -207,6 +210,8 @@ spec:
       args:
         {{- if ne $target "canary" }}
         - -config.file=/etc/loki/config/config.yaml
+        - -config.expand-env=true
+        - -memberlist.advertise-addr=$(POD_IP)
         - -target={{ replace "single-binary" "all" $target }}{{- if and .Values.loki.ui.enabled (has $target (list "single-binary" "read" "query-frontend" "querier")) }},ui{{- end }}
         {{- end }}
         {{- with $args }}
@@ -258,6 +263,10 @@ spec:
         {{- toYaml (omit . "enabled") | nindent 8 }}
         {{- end }}
       {{- end }}
+      {{- with $component.lifecycle }}
+      lifecycle:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       volumeMounts:
         {{- if ne $target "canary" }}
         - name: config
@@ -282,7 +291,7 @@ spec:
         {{- with (concat .Values.global.extraVolumeMounts .Values.defaults.extraVolumeMounts $component.extraVolumeMounts) | uniq }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-      {{- with $component.resources }}
+      {{- with (coalesce $component.resources .Values.defaults.resources .Values.loki.resources) }}
       resources:
         {{- toYaml . | nindent 8 }}
       {{- end }}
@@ -304,10 +313,16 @@ spec:
 rules sidecar
 */}}
 {{- define "loki.rulesSidecar" -}}
-{{- if .Values.sidecar.rules.enabled }}
+{{- if .Values.sidecar.rules.enabled -}}
 - name: loki-sc-rules
   image: {{ include "loki.image" (dict "ctx" . "component" .Values.sidecar.image) }}
   imagePullPolicy: {{ .Values.sidecar.image.pullPolicy }}
+  {{- if .Values.sidecar.rules.healthPort }}
+  ports:
+    - name: http-sidecar
+      containerPort: {{ .Values.sidecar.rules.healthPort }}
+      protocol: TCP
+  {{- end }}
   {{- with .Values.sidecar.resources }}
   resources:
     {{- toYaml . | nindent 4 }}
@@ -382,6 +397,10 @@ rules sidecar
     {{- if .Values.sidecar.rules.logLevel }}
     - name: LOG_LEVEL
       value: "{{ .Values.sidecar.rules.logLevel }}"
+    {{- end }}
+    {{- if .Values.sidecar.rules.healthPort }}
+    - name: HEALTH_PORT
+      value: "{{ .Values.sidecar.rules.healthPort }}"
     {{- end }}
   volumeMounts:
     - name: sc-rules-temp

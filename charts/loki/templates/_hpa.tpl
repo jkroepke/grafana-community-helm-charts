@@ -8,6 +8,7 @@ HPA helper
   {{- $kind := .component.kind | default .kind | default "StatefulSet" }}
   {{- $ctx := .ctx }}
   {{- $component := .component }}
+  {{- $targetName := .targetName }}
   {{- $suffix := .suffix | default "" }}
   {{- with $ctx }}
 ---
@@ -23,25 +24,16 @@ spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: {{ $kind }}
-    name: {{ include "loki.resourceName" (dict "ctx" . "component" $target "suffix" $suffix) }}
+    name: "{{ $targetName | default (include "loki.workloadResourceName" (dict "ctx" $ctx "component" $target "componentValues" $component "suffix" $suffix)) }}"
   minReplicas: {{ $component.autoscaling.minReplicas }}
   maxReplicas: {{ $component.autoscaling.maxReplicas }}
-  {{- if hasKey ($component.autoscaling.behavior | default dict) "enabled" }}
-  {{- if $component.autoscaling.behavior.enabled }}
+  {{- $behavior := $component.autoscaling.behavior | default dict }}
+  {{- $enabled := get $behavior "enabled" | default false }}
+  {{- if $enabled }}
   behavior:
-    {{- with $component.autoscaling.behavior.scaleDown }}
-    scaleDown: {{- toYaml . | nindent 6 }}
-    {{- end }}
-    {{- with $component.autoscaling.behavior.scaleUp }}
-    scaleUp: {{- toYaml . | nindent 6 }}
-    {{- end }}
+    {{- toYaml (omit $behavior "enabled") | nindent 4 }}
   {{- end }}
-  {{- else }}
-  {{- with $component.autoscaling.behavior }}
-  behavior:
-    {{- toYaml . | nindent 4 }}
-  {{- end }}
-  {{- end }}
+  {{- if or $component.autoscaling.targetMemoryUtilizationPercentage $component.autoscaling.targetCPUUtilizationPercentage $component.autoscaling.customMetrics }}
   metrics:
   {{- with $component.autoscaling.targetMemoryUtilizationPercentage }}
     - type: Resource
@@ -61,6 +53,15 @@ spec:
   {{- end }}
   {{- with $component.autoscaling.customMetrics }}
     {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- else }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 80
   {{- end }}
   {{- end }}
 {{- end }}

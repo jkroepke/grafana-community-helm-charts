@@ -5,10 +5,12 @@
 kubeVersionOverride: ""
 
 global:
-  # -- Overrides the Docker registry globally for all images (standard format)
+  # -- Overrides the Docker registry globally for all images (standard format).
+  # This has the highest precedence and overrides every component-level image.registry value.
   imageRegistry: null
   image:
-    # -- Overrides the Docker registry globally for all images (deprecated, use global.imageRegistry)
+    # -- Overrides the Docker registry globally for all images (deprecated, use global.imageRegistry).
+    # This has lower precedence than global.imageRegistry, but higher precedence than component-level image.registry values.
     registry: null
   # -- Overrides the priorityClassName for all pods
   priorityClassName: null
@@ -19,12 +21,15 @@ global:
   # -- configures DNS service namespace
   dnsNamespace: "kube-system"
   # -- Common additional CLI arguments for all jobs (that is, -log.level debug, -config.expand-env=true or -log-config-reverse-order)
+  # (deprecated, use defaults.extraArgs)
   # scope: backend, bloom-builder, bloom-gateway, bloom-planner, compactor, distributor, index-gateway, ingester, overrides-exporter, pattern-ingester, querier, query-frontend, query-scheduler, read, ruler, write.
   extraArgs: []
   # -- Common environment variables to add to all pods directly managed by this chart.
+  # (deprecated, use defaults.extraEnv)
   # scope: backend, bloom-builder, bloom-gateway, bloom-planner, compactor, distributor, index-gateway, ingester, overrides-exporter, pattern-ingester, querier, query-frontend, query-scheduler, read, ruler, write.
   extraEnv: []
   # -- Common source of environment injections to add to all pods directly managed by this chart.
+  # (deprecated, use defaults.extraEnvFrom)
   # scope: backend, bloom-builder, bloom-gateway, bloom-planner, compactor, distributor, index-gateway, ingester, overrides-exporter, pattern-ingester, querier, query-frontend, query-scheduler, read, ruler, write.
   # For example to inject values from a Secret, use:
   # extraEnvFrom:
@@ -32,11 +37,14 @@ global:
   #       name: mysecret
   extraEnvFrom: []
   # -- Common volumes to add to all pods directly managed by this chart.
+  # (deprecated, use defaults.extraVolumes)
   # scope: backend, bloom-builder, bloom-gateway, bloom-planner, compactor, distributor, index-gateway, ingester, overrides-exporter, pattern-ingester, querier, query-frontend, query-scheduler, read, ruler, write.
   extraVolumes: []
   # -- Common mount points to add to all pods directly managed by this chart.
+  # (deprecated, use defaults.extraVolumeMounts)
   # scope: backend, bloom-builder, bloom-gateway, bloom-planner, compactor, distributor, index-gateway, ingester, overrides-exporter, pattern-ingester, querier, query-frontend, query-scheduler, read, ruler, write.
   extraVolumeMounts: []
+
 # -- Overrides the chart's name
 nameOverride: ""
 # -- Overrides the chart's computed fullname
@@ -49,14 +57,15 @@ clusterLabelOverride: ""
 imagePullSecrets: []
 # -- Deployment mode lets you specify how to deploy Loki.
 # There are 3 options:
-# - SingleBinary: Loki is deployed as a single binary, useful for small installs typically without HA, up to a few tens of GB/day.
-# - SimpleScalable: Loki is deployed as 3 targets: read, write, and backend. Useful for medium installs easier to manage than distributed, up to a about 1TB/day.
+# - Monolithic (deprecated: SingleBinary): Loki is deployed as a single binary, useful for small installs typically without HA, up to a few tens of GB/day.
+# - SimpleScalable (deprecated, removed in Loki 4): Loki is deployed as 3 targets: read, write, and backend. Useful for medium installs easier to manage than distributed, up to a about 1TB/day.
 # - Distributed: Loki is deployed as individual microservices. The most complicated but most capable, useful for large installs, typically over 1TB/day.
 # There are also 2 additional modes used for migrating between deployment modes:
-# - SingleBinary<->SimpleScalable: Migrate from SingleBinary to SimpleScalable (or vice versa)
+# - Monolithic<->SimpleScalable (deprecated: SingleBinary<->SimpleScalable): Migrate from SingleBinary to SimpleScalable (or vice versa)
 # - SimpleScalable<->Distributed: Migrate from SimpleScalable to Distributed (or vice versa)
 # Note: SimpleScalable and Distributed REQUIRE the use of object storage.
-deploymentMode: SimpleScalable
+# Ref: https://grafana.com/docs/loki/latest/get-started/deployment-modes/
+deploymentMode: Monolithic
 # -- Labels to be added to resources
 commonLabels: {}
 
@@ -135,6 +144,7 @@ runtimeConfig: {}
 #
 # Defaults applied to all loki configurations
 # Current supported scope: backend, bloom-builder, distributor
+# Defaults applied to all loki components, including loki-canary.
 #
 ######################################################################################################################
 defaults:
@@ -191,6 +201,10 @@ defaults:
   tolerations: []
   # -- Set this toggle to false to opt out of automounting API credentials for the service account
   automountServiceAccountToken: true
+  # -- Annotations for loki Deployments/StatefulSets
+  annotations: {}
+  # -- Additional labels for loki Deployments/StatefulSets
+  labels: {}
   # -- Annotations for loki pods
   podAnnotations: {}
   # -- Additional labels for loki pod
@@ -205,6 +219,12 @@ defaults:
     # -- trafficDistribution for services
     # Ref: https://kubernetes.io/docs/concepts/services-networking/service/#traffic-distribution
     trafficDistribution: ""
+    # -- ipFamilyPolicy for all services
+    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
+    ipFamilyPolicy: ""
+    # -- ipFamilies for all services
+    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
+    ipFamilies: []
   # -- KEDA autoscaling shared configuration for all components that support KEDA
   kedaAutoscaling:
     # -- Prometheus server address for KEDA triggers
@@ -217,6 +237,8 @@ defaults:
     customHeaders: ""
     # -- Interval (seconds) to poll each trigger. Overridable per component.
     pollingInterval: 30
+    # -- Period (seconds) to wait after the last trigger reported active before scaling back to 0. Overridable per component.
+    cooldownPeriod: 300
     # -- KEDA trigger authentication settings. Ref: https://keda.sh/docs/latest/concepts/authentication/
     authentication:
       # -- Enable TriggerAuthentication for KEDA triggers
@@ -225,6 +247,15 @@ defaults:
       authModes: ""
       # -- Secret key references for TriggerAuthentication
       secretTargetRef: []
+  statefulSetRecreateJob:
+    # -- Enable the PVC resize job for statefulsets. This job will be triggered when the storage size is increased and
+    # will recreate the statefulset to allow resizing of PVCs, which is not natively supported by Kubernetes.
+    patchPVC: true
+    image:
+      registry: registry.k8s.io
+      repository: kubectl
+      # -- Overrides the image tag. Defaults to .Capabilities.KubeVersion.Version
+      tag: ''
 
 ######################################################################################################################
 #
@@ -236,7 +267,14 @@ defaults:
 # @default -- See values.yaml
 loki:
   # Configures the liveness probe for all of the Loki pods
-  livenessProbe: {}
+  livenessProbe:
+    httpGet:
+      path: /loki/api/v1/status/buildinfo
+      port: http-metrics
+    periodSeconds: 30
+    successThreshold: 1
+    failureThreshold: 10
+    timeoutSeconds: 1
   # Configures the readiness probe for all of the Loki pods
   readinessProbe:
     httpGet:
@@ -555,7 +593,14 @@ loki:
   # -- memberlist configuration (overrides embedded default)
   memberlistConfig: {}
   # -- Extra memberlist configuration
-  extraMemberlistConfig: {}
+  extraMemberlistConfig:
+    abort_if_cluster_join_fails: true
+    advertise_port: 7946
+    bind_port: 7946
+    max_join_backoff: 1m
+    max_join_retries: 10
+    min_join_backoff: 1s
+    rejoin_interval: 90s
   # -- Tenants list to be created on nginx htpasswd file, with name and password or passwordHash keys<br><br>
   # Example:
   # <pre>
@@ -568,14 +613,28 @@ loki:
   tenants: []
   # -- Check https://grafana.com/docs/loki/latest/configuration/#server for more info on the server configuration.
   server:
-    http_listen_port: 3100
+    graceful_shutdown_timeout: 5s
     grpc_listen_port: 9095
-    http_server_read_timeout: 600s
-    http_server_write_timeout: 600s
+    grpc_server_min_time_between_pings: '10s'
+    grpc_server_ping_without_stream_allowed: true
+    grpc_server_max_concurrent_streams: 1000
+    grpc_server_max_recv_msg_size: 104857600
+    grpc_server_max_send_msg_size: 104857600
+    http_listen_port: 3100
+    http_server_idle_timeout: 30s
+    http_server_read_timeout: 10m0s
+    http_server_write_timeout: 10m0s
+    log_level: info
   service:
     # -- trafficDistribution for services
     # Ref: https://kubernetes.io/docs/concepts/services-networking/service/#traffic-distribution
     trafficDistribution: ""
+    # -- ipFamilyPolicy for all services
+    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
+    ipFamilyPolicy: ""
+    # -- ipFamilies for all services
+    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
+    ipFamilies: []
   # -- Limits config
   limits_config:
     reject_old_samples: true
@@ -840,8 +899,14 @@ lokiCanary:
   labelname: pod
   # -- Additional annotations for the `loki-canary` Daemonset
   annotations: {}
+  # -- Additional labels for the `loki-canary` Daemonset
+  labels: {}
+  # -- Additional annotations for each `loki-canary` pod
+  podAnnotations: {}
   # -- Additional labels for each `loki-canary` pod
   podLabels: {}
+  # -- The number of old ReplicaSets to retain to allow rollback
+  revisionHistoryLimit: 10
   service:
     # -- Annotations for loki-canary Service
     annotations: {}
@@ -914,7 +979,12 @@ lokiCanary:
     # -- Docker image pull policy
     pullPolicy: IfNotPresent
   # -- Liveness probe
-  livenessProbe: {}
+  livenessProbe:
+    httpGet:
+      path: /metrics
+      port: http-metrics
+    initialDelaySeconds: 15
+    timeoutSeconds: 1
   # -- Readiness probe
   readinessProbe:
     httpGet:
@@ -951,6 +1021,7 @@ lokiCanary:
     labels: {}
     # -- Set this toggle to false to opt out of automounting API credentials for the service account
     automountServiceAccountToken: false
+
 ######################################################################################################################
 #
 # Service Accounts and Kubernetes RBAC
@@ -970,6 +1041,7 @@ serviceAccount:
   labels: {}
   # -- Set this toggle to false to opt out of automounting API credentials for the service account
   automountServiceAccountToken: true
+
 # RBAC configuration
 rbac:
   # -- For OpenShift set sccEnabled to 'true' to use the SecurityContextConstraints.
@@ -978,6 +1050,7 @@ rbac:
   sccAllowHostDirVolumePlugin: false
   # -- Whether to install RBAC in the namespace only or cluster-wide. Useful if you want to watch ConfigMap globally.
   namespaced: false
+
 ######################################################################################################################
 #
 # Network Policy configuration
@@ -986,9 +1059,6 @@ rbac:
 networkPolicy:
   # -- Specifies whether Network Policies should be created
   enabled: false
-  # -- Specifies whether the policies created will be standard Network Policies (flavor: kubernetes)
-  # or Cilium Network Policies (flavor: cilium)
-  flavor: kubernetes
   metrics:
     # -- Specifies the Pods which are allowed to access the metrics port.
     # As this is cross-namespace communication, you also need the namespaceSelector.
@@ -1026,12 +1096,6 @@ networkPolicy:
     podSelector: {}
     # -- Specifies the namespace the discovery Pods are running in
     namespaceSelector: {}
-  egressWorld:
-    # -- Enable additional cilium egress rules to external world for write, read and backend.
-    enabled: false
-  egressKubeApiserver:
-    # -- Enable additional cilium egress rules to kube-apiserver for backend.
-    enabled: false
 ######################################################################################################################
 #
 # Global memberlist configuration
@@ -1101,8 +1165,9 @@ gateway:
     minReplicas: 1
     # -- Maximum replicas for KEDA autoscaling
     maxReplicas: 3
-    # -- Period to wait after the last trigger reported active before scaling the resource back to 0 (seconds)
-    cooldownPeriod: 300
+    # -- Period to wait after the last trigger reported active before scaling the resource back to 0 (seconds).
+    # Defaults to defaults.kedaAutoscaling.cooldownPeriod if not set.
+    cooldownPeriod: null
     # -- Fallback configuration for KEDA ScaledObject. Applied when the trigger metric cannot be retrieved.
     # Ref: https://keda.sh/docs/latest/reference/scaledobject-spec/#fallback
     fallback: {}
@@ -1120,7 +1185,7 @@ gateway:
     # -- The gateway image repository
     repository: nginxinc/nginx-unprivileged
     # -- The gateway image tag
-    tag: 1.29-alpine
+    tag: 1.31-alpine
     # -- Overrides the gateway image tag with an image digest
     digest: null
     # -- The gateway image pull policy
@@ -1225,6 +1290,12 @@ gateway:
     sessionAffinity: ""
     # -- Session affinity config for gateway Service
     sessionAffinityConfig: {}
+    # -- ipFamilyPolicy for gateway Service
+    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
+    ipFamilyPolicy: ""
+    # -- ipFamilies for gateway Service
+    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
+    ipFamilies: []
   serviceAccount:
     # -- Specifies whether a ServiceAccount should be created
     create: true
@@ -1291,6 +1362,57 @@ gateway:
       {{- end }}
     # -- Existing basic auth secret to use. Must contain '.htpasswd'
     existingSecret: null
+  # -- Gateway API routes configuration. Mutually exclusive with gateway.ingress.
+  # Use either ingress or route, but not both at once.
+  # Each entry in the map creates a separate HTTPRoute resource. The key "main" produces
+  # a route named after the gateway fullname; any other key appends the key as a suffix.
+  # This allows defining multiple routes, e.g. one HTTPRoute and one GRPCRoute.
+  route:
+    main:
+      # -- Specifies whether this Gateway API route should be created
+      enabled: false
+      # -- Set the route apiVersion, e.g. gateway.networking.k8s.io/v1 or gateway.networking.k8s.io/v1beta1.
+      # If not set, the latest available version will be auto-detected.
+      apiVersion: ""
+      # -- Set the route kind. Valid options are GRPCRoute, HTTPRoute, TCPRoute, TLSRoute, UDPRoute
+      kind: HTTPRoute
+      # -- Additional annotations for the route
+      annotations: {}
+      # -- Additional labels for the route
+      labels: {}
+      # -- Hostnames for the route
+      hostnames: []
+      # - gateway.loki.example.com
+      # -- Parent gateway references to attach the route to
+      parentRefs: []
+      # - name: my-gateway
+      #   namespace: gateway-namespace
+      # -- Additional rules to prepend before the default catch-all rule.
+      # Each entry is rendered into spec.rules as written (templating is supported),
+      # so any HTTPRoute/GRPCRoute rule shape is accepted — including filter-only rules
+      # with no backendRefs (e.g. RequestRedirect, URLRewrite).
+      # Useful for advanced routing logic (e.g. header-based routing, auth policies, redirects).
+      # Note: the chart-generated rule that points at the gateway service is always rendered
+      # for this route — additionalRules are prepended, not a replacement.
+      # Example HTTP-to-HTTPS redirect:
+      #   additionalRules:
+      #     - filters:
+      #         - type: RequestRedirect
+      #           requestRedirect:
+      #             scheme: https
+      #             statusCode: 301
+      #       matches:
+      #         - path: { type: PathPrefix, value: / }
+      additionalRules: []
+      # -- Matches for the default rule. Defaults to match all paths.
+      matches:
+        - path:
+            type: PathPrefix
+            value: /
+      # -- Filters for the default rule
+      filters: []
+      # -- Timeouts for the default rule
+      timeouts: {}
   # -- liveness probe for the nginx container in the gateway pods.
   livenessProbe: {}
   # Configures the readiness probe for the gateway
@@ -1340,8 +1462,9 @@ gateway:
     # -- Whether gateway metrics should be exported
     enabled: true
     image:
-      repository: "ghcr.io/jkroepke/access-log-exporter"
-      tag: "0.3.9"
+      registry: ghcr.io
+      repository: "jkroepke/access-log-exporter"
+      tag: "0.3.18"
       pullPolicy: IfNotPresent
     resources:
       requests: {}
@@ -1380,6 +1503,13 @@ gateway:
       failureThreshold: 3
     # -- Startup probe for memcached exporter
     startupProbe: {}
+    service:
+      # -- Annotations for the gateway metrics exporter service.
+      # Use this instead of gateway.service.annotations to avoid propagating
+      # annotations (e.g. external-dns) to the exporter ClusterIP service.
+      annotations: {}
+      # -- Labels for the gateway metrics exporter service.
+      labels: {}
 
 # -- Ingress configuration Use either this ingress or the gateway, but not both at once.
 # If you enable this, make sure to disable the gateway.
@@ -1397,17 +1527,17 @@ ingress:
   #    blackbox.monitoring.exclude: "true"
   paths:
     # -- Paths that are exposed by Loki Distributor.
-    # If deployment mode is Distributed, the requests are forwarded to the service: `{{"loki.distributorFullname"}}`.
-    # If deployment mode is SimpleScalable, the requests are forwarded to write k8s service: `{{"loki.writeFullname"}}`.
-    # If deployment mode is SingleBinary, the requests are forwarded to the central/single k8s service: `{{"loki.singleBinaryFullname"}}`
+    # If deployment mode is Distributed, the requests are forwarded to the service:.
+    # If deployment mode is SimpleScalable, the requests are forwarded to write k8s service:.
+    # If deployment mode is SingleBinary, the requests are forwarded to the central/single k8s service:
     distributor:
       - /api/prom/push
       - /loki/api/v1/push
       - /otlp/v1/logs
     # -- Paths that are exposed by Loki Query Frontend.
-    # If deployment mode is Distributed, the requests are forwarded to the service: `{{"loki.queryFrontendFullname"}}`.
-    # If deployment mode is SimpleScalable, the requests are forwarded to write k8s service: `{{"loki.readFullname"}}`.
-    # If deployment mode is SingleBinary, the requests are forwarded to the central/single k8s service: `{{"loki.singleBinaryFullname"}}`
+    # If deployment mode is Distributed, the requests are forwarded to the service.
+    # If deployment mode is SimpleScalable, the requests are forwarded to write k8s service`.
+    # If deployment mode is SingleBinary, the requests are forwarded to the central/single k8s service`
     queryFrontend:
       - /api/prom/query
       # this path covers labels and labelValues endpoints
@@ -1432,9 +1562,9 @@ ingress:
       # this path covers UI API
       - /ui
     # -- Paths that are exposed by Loki Ruler.
-    # If deployment mode is Distributed, the requests are forwarded to the service: `{{"loki.rulerFullname"}}`.
-    # If deployment mode is SimpleScalable, the requests are forwarded to k8s service: `{{"loki.backendFullname"}}`.
-    # If deployment mode is SingleBinary, the requests are forwarded to the central/single k8s service: `{{"loki.singleBinaryFullname"}}`
+    # If deployment mode is Distributed, the requests are forwarded to the service.
+    # If deployment mode is SimpleScalable, the requests are forwarded to k8s service.
+    # If deployment mode is SingleBinary, the requests are forwarded to the central/single k8s service
     ruler:
       - /api/prom/rules
       - /api/prom/api/v1/rules
@@ -1443,9 +1573,9 @@ ingress:
       - /prometheus/api/v1/rules
       - /prometheus/api/v1/alerts
     # -- Paths that are exposed by Loki Compactor.
-    # If deployment mode is Distributed, the requests are forwarded to the service: `{{"loki.compactorFullname"}}`.
-    # If deployment mode is SimpleScalable, the requests are forwarded to k8s service: `{{"loki.backendFullname"}}`.
-    # If deployment mode is SingleBinary, the requests are forwarded to the central/single k8s service: `{{"loki.singleBinaryFullname"}}`
+    # If deployment mode is Distributed, the requests are forwarded to the service.
+    # If deployment mode is SimpleScalable, the requests are forwarded to k8s service.
+    # If deployment mode is SingleBinary, the requests are forwarded to the central/single k8s service`
     compactor:
       - /loki/api/v1/delete
   # -- Hosts configuration for the ingress, passed through the `tpl` function to allow templating
@@ -1456,6 +1586,94 @@ ingress:
 #    - hosts:
 #       - loki.example.com
 #      secretName: loki-distributed-tls
+
+# -- Gateway API routes for direct routing to Loki services, bypassing the nginx gateway.
+# Use either this or the top-level ingress, but not both at once.
+# Each entry in the map creates a separate HTTPRoute resource. The key "main" produces
+# a route named after the loki fullname; any other key appends the key as a suffix.
+# This allows defining multiple routes, e.g. one HTTPRoute and one GRPCRoute.
+route:
+  main:
+    # -- Specifies whether this Gateway API route should be created
+    enabled: false
+    # -- Gateway API version to use. Auto-detected from cluster capabilities if empty.
+    apiVersion: ""
+    # -- Kind of the route resource. Valid options are GRPCRoute, HTTPRoute, TCPRoute, TLSRoute, UDPRoute
+    kind: HTTPRoute
+    # -- Annotations for the route
+    annotations: {}
+    # -- Labels for the route
+    labels: {}
+    # -- Hostnames for the route
+    hostnames: []
+    # -- Parent references for the route (required for Gateway API)
+    parentRefs: []
+    # -- Additional rules to prepend before the generated path-routing rules.
+    # Each entry is rendered into spec.rules as written (templating is supported),
+    # so any HTTPRoute/GRPCRoute rule shape is accepted — including filter-only rules
+    # with no backendRefs (e.g. RequestRedirect, URLRewrite).
+    additionalRules: []
+    # -- Backend port override for all generated rules.
+    # When unset, GRPCRoute automatically uses loki.server.grpc_listen_port (default 9095)
+    # and all other kinds use loki.server.http_listen_port (default 3100).
+    backendPort: null
+    # -- Paths routed to each Loki service group. The target service depends on the deployment mode.
+    # To produce a route that contains only `additionalRules` and no chart-generated path rules
+    # (for example, a dedicated HTTP-to-HTTPS redirect route), set every entry below to an empty
+    # list — e.g. `distributor: []`, `queryFrontend: []`, `ruler: []`, `compactor: []`.
+    paths:
+      # -- Paths that are exposed by Loki Distributor.
+      # If deployment mode is Distributed, the requests are forwarded to the service: `{{"loki.distributorFullname"}}`.
+      # If deployment mode is SimpleScalable, the requests are forwarded to write k8s service: `{{"loki.writeFullname"}}`.
+      # If deployment mode is SingleBinary, the requests are forwarded to the central/single k8s service: `{{"loki.fullname"}}`
+      distributor:
+        - /api/prom/push
+        - /loki/api/v1/push
+        - /otlp/v1/logs
+      # -- Paths that are exposed by Loki Query Frontend.
+      # If deployment mode is Distributed, the requests are forwarded to the service.
+      # If deployment mode is SimpleScalable, the requests are forwarded to read k8s service.
+      # If deployment mode is SingleBinary, the requests are forwarded to the central/single k8s service`
+      queryFrontend:
+        - /api/prom/query
+        # this path covers labels and labelValues endpoints
+        - /api/prom/label
+        - /api/prom/series
+        - /api/prom/tail
+        - /loki/api/v1/query
+        - /loki/api/v1/query_range
+        - /loki/api/v1/tail
+        # this path covers labels and labelValues endpoints
+        - /loki/api/v1/label
+        - /loki/api/v1/labels
+        - /loki/api/v1/series
+        - /loki/api/v1/index/stats
+        - /loki/api/v1/index/volume
+        - /loki/api/v1/index/volume_range
+        - /loki/api/v1/format_query
+        - /loki/api/v1/detected_field
+        - /loki/api/v1/detected_fields
+        - /loki/api/v1/detected_labels
+        - /loki/api/v1/patterns
+        # this path covers UI API
+        - /ui
+      # -- Paths that are exposed by Loki Ruler.
+      # If deployment mode is Distributed, the requests are forwarded to the service.
+      # If deployment mode is SimpleScalable, the requests are forwarded to k8s service.
+      # If deployment mode is SingleBinary, the requests are forwarded to the central/single k8s service.
+      ruler:
+        - /api/prom/rules
+        - /api/prom/api/v1/rules
+        - /api/prom/api/v1/alerts
+        - /loki/api/v1/rules
+        - /prometheus/api/v1/rules
+        - /prometheus/api/v1/alerts
+      # -- Paths that are exposed by Loki Compactor.
+      # If deployment mode is Distributed, the requests are forwarded to the service.
+      # If deployment mode is SimpleScalable, the requests are forwarded to k8s service.
+      # If deployment mode is SingleBinary, the requests are forwarded to the central/single k8s service.
+      compactor:
+        - /loki/api/v1/delete
 
 ######################################################################################################################
 #
@@ -1486,8 +1704,20 @@ podDisruptionBudget:
 
 # Configuration for the single binary node(s)
 singleBinary:
+  # -- Enable the single binary component. Requires `loki.deploymentMode` to be set to `SingleBinary`.
+  enabled: true
+    # -- Kind of read deployment. StatefulSet and Deployment are supported.
+  kind: StatefulSet
   # -- Number of replicas for the single binary
   replicas: 0
+  # -- EXPERIMENTAL: Enable creating a Job to recreate the write StatefulSet when the compactor configuration is changed.
+  ## Only applicable if `compactor.kind` is StatefulSet. Useful for PVC size changes, which require recreating the StatefulSet.
+  statefulSetRecreateJob:
+    enabled: false
+  # -- UpdateStrategy or Strategy for single binary.
+  strategy:
+    rollingUpdate:
+      partition: 0
   # -- Whether to enable the rules sidecar
   sidecar: true
   autoscaling:
@@ -1510,6 +1740,7 @@ singleBinary:
     #     target:
     #       type: AverageValue
     #       averageValue: 10k
+    # -- HPA behavior configuration, passed directly as a K8s HPA behavior object.
     behavior:
       # -- Enable autoscaling behaviours
       enabled: false
@@ -1526,8 +1757,9 @@ singleBinary:
     minReplicas: 1
     # -- Maximum replicas for KEDA autoscaling
     maxReplicas: 3
-    # -- Period to wait after the last trigger reported active before scaling the resource back to 0 (seconds)
-    cooldownPeriod: 300
+    # -- Period to wait after the last trigger reported active before scaling the resource back to 0 (seconds).
+    # Defaults to defaults.kedaAutoscaling.cooldownPeriod if not set.
+    cooldownPeriod: null
     # -- Fallback configuration for KEDA ScaledObject. Applied when the trigger metric cannot be retrieved.
     # Ref: https://keda.sh/docs/latest/reference/scaledobject-spec/#fallback
     fallback: {}
@@ -1548,6 +1780,8 @@ singleBinary:
   priorityClassName: null
   # -- Annotations for single binary StatefulSet
   annotations: {}
+  # -- Additional labels for single binary StatefulSet
+  labels: {}
   # -- Annotations for single binary pods
   podAnnotations: {}
   # -- Additional labels for each `single binary` pod
@@ -1577,6 +1811,12 @@ singleBinary:
     sessionAffinity: ""
     # -- Session affinity config for single binary Service
     sessionAffinityConfig: {}
+    # -- ipFamilyPolicy for single binary Service
+    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
+    ipFamilyPolicy: ""
+    # -- ipFamilies for single binary Service
+    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
+    ipFamilies: []
     # -- Adds the appProtocol field to the single binary service. This allows single binary to work with istio protocol selection.
     appProtocol:
       # -- Set the optional grpc service protocol. Ex: "grpc", "http2" or "https"
@@ -1624,6 +1864,8 @@ singleBinary:
   nodeSelector: {}
   # -- Tolerations for single binary pods
   tolerations: []
+  # -- The default is to deploy all pods in parallel.
+  podManagementPolicy: "Parallel"
   persistence:
     # -- What to do with the volume when the StatefulSet is scaled down.
     whenScaled: Delete
@@ -1631,10 +1873,6 @@ singleBinary:
     whenDeleted: Delete
     # -- Enable StatefulSetAutoDeletePVC feature
     enableStatefulSetAutoDeletePVC: true
-    # -- Enable StatefulSetRecreation for changes to PVC size.
-    # This means that the StatefulSet will be deleted, recreated (with the same name) and rolled when a change to the
-    # PVC size is detected. That way the PVC can be resized without manual intervention.
-    enableStatefulSetRecreationForSizeChange: false
     # -- Enable persistent disk
     enabled: true
     # -- Set access modes on the PersistentVolumeClaim
@@ -1654,6 +1892,13 @@ singleBinary:
     annotations: {}
     # -- Labels for volume claim
     labels: {}
+    # -- Parameters used for the `storage` volume when persistence.enabled is false.
+    # Allows replacing the default emptyDir volume with a custom volume definition.
+    # For example, to use an existing PVC:
+    #   dataVolumeParameters:
+    #     persistentVolumeClaim:
+    #       claimName: my-existing-pvc
+    dataVolumeParameters: {}
 ######################################################################################################################
 #
 # Simple Scalable Deployment (SSD) Mode
@@ -1664,8 +1909,22 @@ singleBinary:
 
 # Configuration for the write pod(s)
 write:
+  # -- Enable the component. Requires `loki.deploymentMode` to be set to `SimpleScalable`.
+  enabled: true
+  # -- Kind of write workload. StatefulSet and Deployment are supported.
+  kind: StatefulSet
+  # -- Override for the write fullname. By default, this is generated using the fullname template with "-backend"
+  fullnameOverride: '{{ include "loki.name" . }}-write'
+  # -- EXPERIMENTAL: Enable creating a Job to recreate the write StatefulSet when the compactor configuration is changed.
+  ## Only applicable if `compactor.kind` is StatefulSet. Useful for PVC size changes, which require recreating the StatefulSet.
+  statefulSetRecreateJob:
+    enabled: false
   # -- Number of replicas for the write
   replicas: 3
+  # -- UpdateStrategy or Strategy for the write.
+  strategy:
+    rollingUpdate:
+      partition: 0
   autoscaling:
     # -- Enable autoscaling for the write.
     enabled: false
@@ -1700,8 +1959,9 @@ write:
     minReplicas: 2
     # -- Maximum replicas for KEDA autoscaling
     maxReplicas: 6
-    # -- Period to wait after the last trigger reported active before scaling the resource back to 0 (seconds)
-    cooldownPeriod: 300
+    # -- Period to wait after the last trigger reported active before scaling the resource back to 0 (seconds).
+    # Defaults to defaults.kedaAutoscaling.cooldownPeriod if not set.
+    cooldownPeriod: null
     # -- Fallback configuration for KEDA ScaledObject. Applied when the trigger metric cannot be retrieved.
     # Ref: https://keda.sh/docs/latest/reference/scaledobject-spec/#fallback
     fallback: {}
@@ -1722,6 +1982,8 @@ write:
   priorityClassName: null
   # -- Annotations for write StatefulSet
   annotations: {}
+  # -- Additional labels for write StatefulSet
+  labels: {}
   # -- Annotations for write pods
   podAnnotations: {}
   # -- Additional labels for each `write` pod
@@ -1741,6 +2003,12 @@ write:
     sessionAffinity: ""
     # -- Session affinity config for write Service
     sessionAffinityConfig: {}
+    # -- ipFamilyPolicy for write Service
+    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
+    ipFamilyPolicy: ""
+    # -- ipFamilies for write Service
+    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
+    ipFamilies: []
     # -- Adds the appProtocol field to the write service. This allows write to work with istio protocol selection.
     appProtocol:
       # -- Set the optional grpc service protocol. Ex: "grpc", "http2" or "https"
@@ -1843,7 +2111,7 @@ write:
     labels: {}
   serviceAccount:
     # -- Specifies whether a ServiceAccount should be created
-    create: true
+    create: false
     # -- The name of the ServiceAccount to use.
     # If not set and create is true, a name is generated using the fullname template
     name: null
@@ -1858,8 +2126,19 @@ write:
 
 # --  Configuration for the read pod(s)
 read:
+  # -- Enable the component. Requires `loki.deploymentMode` to be set to `SimpleScalable`.
+  enabled: true
+  # -- Kind of read deployment. StatefulSet and Deployment are supported.
+  kind: Deployment
+  # -- Override for the read fullname. By default, this is generated using the fullname template with "-backend"
+  fullnameOverride: '{{ include "loki.name" . }}-read'
   # -- Number of replicas for the read
   replicas: 3
+  # -- UpdateStrategy or Strategy for the read.
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   autoscaling:
     # -- Enable autoscaling for the read, this is only used if `queryIndex.enabled: true`
     enabled: false
@@ -1894,8 +2173,9 @@ read:
     minReplicas: 2
     # -- Maximum replicas for KEDA autoscaling
     maxReplicas: 6
-    # -- Period to wait after the last trigger reported active before scaling the resource back to 0 (seconds)
-    cooldownPeriod: 300
+    # -- Period to wait after the last trigger reported active before scaling the resource back to 0 (seconds).
+    # Defaults to defaults.kedaAutoscaling.cooldownPeriod if not set.
+    cooldownPeriod: null
     # -- Fallback configuration for KEDA ScaledObject. Applied when the trigger metric cannot be retrieved.
     # Ref: https://keda.sh/docs/latest/reference/scaledobject-spec/#fallback
     fallback: {}
@@ -1916,6 +2196,8 @@ read:
   priorityClassName: null
   # -- Annotations for read deployment
   annotations: {}
+  # -- Additional labels for read deployment
+  labels: {}
   # -- Annotations for read pods
   podAnnotations: {}
   # -- Additional labels for each `read` pod
@@ -1935,6 +2217,12 @@ read:
     sessionAffinity: ""
     # -- Session affinity config for read Service
     sessionAffinityConfig: {}
+    # -- ipFamilyPolicy for read Service
+    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
+    ipFamilyPolicy: ""
+    # -- ipFamilies for read Service
+    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
+    ipFamilies: []
     # -- Adds the appProtocol field to the read service. This allows read to work with istio protocol selection.
     appProtocol:
       # -- Set the optional grpc service protocol. Ex: "grpc", "http2" or "https"
@@ -2017,8 +2305,22 @@ read:
 
 # --  Configuration for the backend pod(s)
 backend:
+  # -- Enable the component. Requires `loki.deploymentMode` to be set to `SimpleScalable`.
+  enabled: true
+  # -- Kind of backend workload. StatefulSet and Deployment are supported.
+  kind: StatefulSet
+  # -- Override for the backend fullname. By default, this is generated using the fullname template with "-backend"
+  fullnameOverride: '{{ include "loki.name" . }}-backend'
+  # -- EXPERIMENTAL: Enable creating a Job to recreate the backend StatefulSet when the compactor configuration is changed.
+  ## Only applicable if `compactor.kind` is StatefulSet. Useful for PVC size changes, which require recreating the StatefulSet.
+  statefulSetRecreateJob:
+    enabled: false
   # -- Number of replicas for the backend
   replicas: 3
+  # -- UpdateStrategy or Strategy for the backend.
+  strategy:
+    rollingUpdate:
+      partition: 0
   # -- Whether to enable the rules sidecar
   sidecar: true
   # -- Set this toggle to false to opt out of automounting API credentials for the service account
@@ -2057,8 +2359,9 @@ backend:
     minReplicas: 3
     # -- Maximum replicas for KEDA autoscaling
     maxReplicas: 6
-    # -- Period to wait after the last trigger reported active before scaling the resource back to 0 (seconds)
-    cooldownPeriod: 300
+    # -- Period to wait after the last trigger reported active before scaling the resource back to 0 (seconds).
+    # Defaults to defaults.kedaAutoscaling.cooldownPeriod if not set.
+    cooldownPeriod: null
     # -- Fallback configuration for KEDA ScaledObject. Applied when the trigger metric cannot be retrieved.
     # Ref: https://keda.sh/docs/latest/reference/scaledobject-spec/#fallback
     fallback: {}
@@ -2079,6 +2382,8 @@ backend:
   priorityClassName: null
   # -- Annotations for backend StatefulSet
   annotations: {}
+  # -- Additional labels for backend StatefulSet
+  labels: {}
   # -- Annotations for backend pods
   podAnnotations: {}
   # -- Additional labels for each `backend` pod
@@ -2098,6 +2403,12 @@ backend:
     sessionAffinity: ""
     # -- Session affinity config for backend Service
     sessionAffinityConfig: {}
+    # -- ipFamilyPolicy for backend Service
+    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
+    ipFamilyPolicy: ""
+    # -- ipFamilies for backend Service
+    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
+    ipFamilies: []
     # -- Adds the appProtocol field to the backend service. This allows backend to work with istio protocol selection.
     appProtocol:
       # -- Set the optional grpc service protocol. Ex: "grpc", "http2" or "https"
@@ -2162,6 +2473,8 @@ backend:
   podManagementPolicy: "Parallel"
   persistence:
     # -- Enable volume claims in pod spec
+    enabled: false
+    # -- Enable volume claims in pod spec. Deprecated in favor of `persistence.enabled`.
     volumeClaimsEnabled: true
     # -- Set access modes on the PersistentVolumeClaim
     accessModes:
@@ -2169,6 +2482,10 @@ backend:
     # -- Parameters used for the `data` volume when volumeClaimEnabled if false
     dataVolumeParameters:
       emptyDir: {}
+    # -- What to do with the volume when the StatefulSet is scaled down.
+    whenScaled: Delete
+    # -- What to do with the volumes when the StatefulSet is deleted.
+    whenDeleted: Delete
     # -- Enable StatefulSetAutoDeletePVC feature
     enableStatefulSetAutoDeletePVC: true
     # -- Size of persistent disk
@@ -2213,8 +2530,24 @@ backend:
 
 # -- Configuration for the ingester
 ingester:
+  # -- Enable the component. Requires `loki.deploymentMode` to be set to `Distributed`.
+  enabled: true
+  # -- Kind of compactor deployment. StatefulSet and Deployment are supported.
+  kind: StatefulSet
+  # -- EXPERIMENTAL: Enable creating a Job to recreate the ingester StatefulSet
+  ## Only applicable if `ingester.kind` is StatefulSet. Useful for PVC size changes, which require recreating the StatefulSet.
+  statefulSetRecreateJob:
+    enabled: false
+  # -- UpdateStrategy or Strategy for the ingester.
+  strategy:
+    type: RollingUpdate
+  # -- PodManagementPolicy for the ingester StatefulSet. Only applicable if `compactor.kind` is StatefulSet.
+  ## OrderedReady and Parallel are supported.
+  podManagementPolicy: Parallel
   # -- Number of replicas for the ingester, when zoneAwareReplication.enabled is true, the total
   # number of replicas will match this value with each zone having 1/3rd of the total replicas.
+  # Set to null to omit spec.replicas from the StatefulSet, allowing an external controller
+  # (e.g. HPA, KEDA, rollout-operator) to manage replica counts without Helm resetting them.
   replicas: 0
   # -- DNSConfig for ingester pods
   dnsConfig: {}
@@ -2245,6 +2578,7 @@ ingester:
     #     target:
     #       type: AverageValue
     #       averageValue: 10k
+    # -- HPA behavior configuration, passed directly as a K8s HPA behavior object.
     behavior:
       # -- Enable autoscaling behaviours
       enabled: false
@@ -2261,8 +2595,9 @@ ingester:
     minReplicas: 1
     # -- Maximum replicas for KEDA autoscaling
     maxReplicas: 3
-    # -- Period to wait after the last trigger reported active before scaling the resource back to 0 (seconds)
-    cooldownPeriod: 300
+    # -- Period to wait after the last trigger reported active before scaling the resource back to 0 (seconds).
+    # Defaults to defaults.kedaAutoscaling.cooldownPeriod if not set.
+    cooldownPeriod: null
     # -- Fallback configuration for KEDA ScaledObject. Applied when the trigger metric cannot be retrieved.
     # Ref: https://keda.sh/docs/latest/reference/scaledobject-spec/#fallback
     fallback: {}
@@ -2281,8 +2616,11 @@ ingester:
     tag: null
   # -- Command to execute instead of defined in Docker image
   command: null
-  labels: {}
   priorityClassName: null
+  # -- Labels for ingester
+  labels: {}
+  # -- Annotations for ingester
+  annotations: {}
   # -- Labels for ingester pods
   podLabels: {}
   # -- Annotations for ingester pods
@@ -2310,6 +2648,12 @@ ingester:
     sessionAffinity: ""
     # -- Session affinity config for ingester Service
     sessionAffinityConfig: {}
+    # -- ipFamilyPolicy for ingester Service
+    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
+    ipFamilyPolicy: ""
+    # -- ipFamilies for ingester Service
+    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
+    ipFamilies: []
     # -- Adds the appProtocol field to the ingester service. This allows ingester to work with istio protocol selection.
     appProtocol:
       # -- Set the optional grpc service protocol. Ex: "grpc", "http2" or "https"
@@ -2464,6 +2808,14 @@ ingester:
       annotations: {}
       # -- Specific annotations to add to zone A pods
       podAnnotations: {}
+      # -- Persistence overrides applied only to the zone A StatefulSet.
+      persistence:
+        # -- Storage class to use for every PVC in zone A. Overrides the `storageClass` of each entry in
+        # `ingester.persistence.claims` for this zone only. Use this when you have one StorageClass per
+        # availability zone (for example a topology-pinned EBS/PD StorageClass). If null, the
+        # claim-level `storageClass` is used as before, preserving existing behavior.
+        # If set to "-", `storageClassName: ""` is rendered, which disables dynamic provisioning.
+        storageClass: null
     zoneB:
       # -- optionally define a node selector for this zone
       nodeSelector: null
@@ -2474,6 +2826,12 @@ ingester:
       annotations: {}
       # -- Specific annotations to add to zone B pods
       podAnnotations: {}
+      # -- Persistence overrides applied only to the zone B StatefulSet.
+      persistence:
+        # -- Storage class to use for every PVC in zone B. See
+        # `ingester.zoneAwareReplication.zoneA.persistence.storageClass` for details. If null, the
+        # claim-level `storageClass` is used as before.
+        storageClass: null
     zoneC:
       # -- optionally define a node selector for this zone
       nodeSelector: null
@@ -2484,6 +2842,12 @@ ingester:
       annotations: {}
       # -- Specific annotations to add to zone C pods
       podAnnotations: {}
+      # -- Persistence overrides applied only to the zone C StatefulSet.
+      persistence:
+        # -- Storage class to use for every PVC in zone C. See
+        # `ingester.zoneAwareReplication.zoneA.persistence.storageClass` for details. If null, the
+        # claim-level `storageClass` is used as before.
+        storageClass: null
     # -- The migration block allows migrating non zone aware ingesters to zone aware ingesters.
     migration:
       enabled: false
@@ -2496,10 +2860,19 @@ ingester:
   # optionally allow adding 'loki-' prefix to ingester name label
   addIngesterNamePrefix: false
 
-# --  Configuration for the distributor
+# -- Configuration for the distributor
 distributor:
+  # -- Enable the component. Requires `loki.deploymentMode` to be set to `Distributed`.
+  enabled: true
   # -- Number of replicas for the distributor
   replicas: 0
+  # -- Kind of compactor deployment. StatefulSet and Deployment are supported.
+  kind: Deployment
+  # -- UpdateStrategy or Strategy for the distributor.
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   # -- hostAliases to add
   hostAliases: []
   #  - ip: 1.2.3.4
@@ -2529,6 +2902,7 @@ distributor:
     #     target:
     #       type: AverageValue
     #       averageValue: 10k
+    # -- HPA behavior configuration, passed directly as a K8s HPA behavior object.
     behavior:
       # -- Enable autoscaling behaviours
       enabled: false
@@ -2545,8 +2919,9 @@ distributor:
     minReplicas: 1
     # -- Maximum replicas for KEDA autoscaling
     maxReplicas: 3
-    # -- Period to wait after the last trigger reported active before scaling the resource back to 0 (seconds)
-    cooldownPeriod: 300
+    # -- Period to wait after the last trigger reported active before scaling the resource back to 0 (seconds).
+    # Defaults to defaults.kedaAutoscaling.cooldownPeriod if not set.
+    cooldownPeriod: null
     # -- Fallback configuration for KEDA ScaledObject. Applied when the trigger metric cannot be retrieved.
     # Ref: https://keda.sh/docs/latest/reference/scaledobject-spec/#fallback
     fallback: {}
@@ -2567,6 +2942,10 @@ distributor:
   command: null
   # -- The name of the PriorityClass for distributor pods
   priorityClassName: null
+  # -- Labels for distributor
+  labels: {}
+  # -- Annotations for distributor
+  annotations: {}
   # -- Labels for distributor pods
   podLabels: {}
   # -- Annotations for distributor pods
@@ -2593,6 +2972,12 @@ distributor:
     sessionAffinity: ""
     # -- Session affinity config for distributor Service
     sessionAffinityConfig: {}
+    # -- ipFamilyPolicy for distributor Service
+    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
+    ipFamilyPolicy: ""
+    # -- ipFamilies for distributor Service
+    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
+    ipFamilies: []
     # -- Adds the appProtocol field to the distributor service. This allows distributor to work with istio protocol selection.
     appProtocol:
       # -- Set the optional grpc service protocol. Ex: "grpc", "http2" or "https"
@@ -2671,10 +3056,21 @@ distributor:
     labels: {}
     # -- Set this toggle to false to opt out of automounting API credentials for the service account
     automountServiceAccountToken: true
-# --  Configuration for the querier
+
+# -- Configuration for the querier
 querier:
+  # -- Enable the component. Requires `loki.deploymentMode` to be set to `Distributed`.
+  enabled: true
+  # -- Kind of compactor deployment. StatefulSet and Deployment are supported.
+  kind: Deployment
   # -- Number of replicas for the querier
   replicas: 0
+  # -- Strategy for the querier.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   # -- hostAliases to add
   hostAliases: []
   #  - ip: 1.2.3.4
@@ -2702,6 +3098,7 @@ querier:
     #     target:
     #       type: AverageValue
     #       averageValue: 12
+    # -- HPA behavior configuration, passed directly as a K8s HPA behavior object.
     behavior:
       # -- Enable autoscaling behaviours
       enabled: false
@@ -2718,8 +3115,9 @@ querier:
     minReplicas: 1
     # -- Maximum replicas for KEDA autoscaling
     maxReplicas: 10
-    # -- Period to wait after the last trigger reported active before scaling the resource back to 0 (seconds)
-    cooldownPeriod: 300
+    # -- Period to wait after the last trigger reported active before scaling the resource back to 0 (seconds).
+    # Defaults to defaults.kedaAutoscaling.cooldownPeriod if not set.
+    cooldownPeriod: null
     # -- Fallback configuration for KEDA ScaledObject. Applied when the trigger metric cannot be retrieved.
     # Ref: https://keda.sh/docs/latest/reference/scaledobject-spec/#fallback
     fallback: {}
@@ -2749,6 +3147,10 @@ querier:
   command: null
   # -- The name of the PriorityClass for querier pods
   priorityClassName: null
+  # -- Labels for querier
+  labels: {}
+  # -- Annotations for querier
+  annotations: {}
   # -- Labels for querier pods
   podLabels: {}
   # -- Annotations for querier pods
@@ -2775,6 +3177,12 @@ querier:
     sessionAffinity: ""
     # -- Session affinity config for querier Service
     sessionAffinityConfig: {}
+    # -- ipFamilyPolicy for querier Service
+    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
+    ipFamilyPolicy: ""
+    # -- ipFamilies for querier Service
+    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
+    ipFamilies: []
     # -- Adds the appProtocol field to the querier service. This allows querier to work with istio protocol selection.
     appProtocol:
       # -- Set the optional grpc service protocol. Ex: "grpc", "http2" or "https"
@@ -2867,8 +3275,18 @@ querier:
 
 # -- Configuration for the query-frontend
 queryFrontend:
+  # -- Enable the component. Requires `loki.deploymentMode` to be set to `Distributed`.
+  enabled: true
+  # -- Kind of compactor deployment. StatefulSet and Deployment are supported.
+  kind: Deployment
   # -- Number of replicas for the query-frontend
   replicas: 0
+  # -- Strategy for the querier.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   # -- hostAliases to add
   hostAliases: []
   #  - ip: 1.2.3.4
@@ -2896,6 +3314,7 @@ queryFrontend:
     #     target:
     #       type: AverageValue
     #       averageValue: 100
+    # -- HPA behavior configuration, passed directly as a K8s HPA behavior object.
     behavior:
       # -- Enable autoscaling behaviours
       enabled: false
@@ -2912,8 +3331,9 @@ queryFrontend:
     minReplicas: 1
     # -- Maximum replicas for KEDA autoscaling
     maxReplicas: 3
-    # -- Period to wait after the last trigger reported active before scaling the resource back to 0 (seconds)
-    cooldownPeriod: 300
+    # -- Period to wait after the last trigger reported active before scaling the resource back to 0 (seconds).
+    # Defaults to defaults.kedaAutoscaling.cooldownPeriod if not set.
+    cooldownPeriod: null
     # -- Fallback configuration for KEDA ScaledObject. Applied when the trigger metric cannot be retrieved.
     # Ref: https://keda.sh/docs/latest/reference/scaledobject-spec/#fallback
     fallback: {}
@@ -2934,6 +3354,10 @@ queryFrontend:
   command: null
   # -- The name of the PriorityClass for query-frontend pods
   priorityClassName: null
+  # -- Labels for query-frontend
+  labels: {}
+  # -- Annotations for query-frontend
+  annotations: {}
   # -- Labels for query-frontend pods
   podLabels: {}
   # -- Annotations for query-frontend pods
@@ -2960,6 +3384,12 @@ queryFrontend:
     sessionAffinity: ""
     # -- Session affinity config for query-frontend Service
     sessionAffinityConfig: {}
+    # -- ipFamilyPolicy for query-frontend Service
+    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
+    ipFamilyPolicy: ""
+    # -- ipFamilies for query-frontend Service
+    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
+    ipFamilies: []
     # -- Adds the appProtocol field to the query-frontend service. This allows query-frontend to work with istio protocol selection.
     appProtocol:
       # -- Set the optional grpc service protocol. Ex: "grpc", "http2" or "https"
@@ -3042,10 +3472,20 @@ queryFrontend:
 
 # -- Configuration for the query-scheduler
 queryScheduler:
+  # -- Enable the component. Requires `loki.deploymentMode` to be set to `Distributed`.
+  enabled: true
+  # -- Kind of query-scheduler deployment. StatefulSet and Deployment are supported.
+  kind: Deployment
   # -- Number of replicas for the query-scheduler.
   # It should be lower than `-querier.max-concurrent` to avoid generating back-pressure in queriers;
   # it's also recommended that this value evenly divides the latter
   replicas: 0
+  # -- Strategy for the query-scheduler.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   # -- DNSConfig for query-scheduler
   dnsConfig: {}
   # -- hostAliases to add
@@ -3064,6 +3504,10 @@ queryScheduler:
     tag: null
   # -- The name of the PriorityClass for query-scheduler pods
   priorityClassName: null
+  # -- Labels for query-scheduler
+  labels: {}
+  # -- Annotations for query-scheduler
+  annotations: {}
   # -- Labels for query-scheduler pods
   podLabels: {}
   # -- Annotations for query-scheduler pods
@@ -3090,6 +3534,12 @@ queryScheduler:
     sessionAffinity: ""
     # -- Session affinity config for query-scheduler Service
     sessionAffinityConfig: {}
+    # -- ipFamilyPolicy for query-scheduler Service
+    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
+    ipFamilyPolicy: ""
+    # -- ipFamilies for query-scheduler Service
+    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
+    ipFamilies: []
     # -- Adds the appProtocol field to the query-scheduler service. This allows query-scheduler to work with istio protocol selection.
     appProtocol:
       # -- Set the optional grpc service protocol. Ex: "grpc", "http2" or "https"
@@ -3150,7 +3600,6 @@ queryScheduler:
     grpc: ""
   # -- trafficDistribution for query-scheduler service
   trafficDistribution: ""
-
   serviceAccount:
     # -- Specifies whether a ServiceAccount should be created
     create: false
@@ -3168,6 +3617,14 @@ queryScheduler:
 
 # -- Configuration for the index-gateway
 indexGateway:
+  # -- Enable the component. Requires `loki.deploymentMode` to be set to `Distributed`.
+  enabled: true
+  # -- Kind of index-gateway deployment. StatefulSet and Deployment are supported.
+  kind: StatefulSet
+  # -- EXPERIMENTAL: Enable creating a Job to recreate the compactor StatefulSet when the compactor configuration is changed.
+  ## Only applicable if `compactor.kind` is StatefulSet. Useful for PVC size changes, which require recreating the StatefulSet.
+  statefulSetRecreateJob:
+    enabled: false
   # -- Number of replicas for the index-gateway
   replicas: 0
   # -- Whether the index gateway should join the memberlist hashring
@@ -3190,6 +3647,10 @@ indexGateway:
     tag: null
   # -- The name of the PriorityClass for index-gateway pods
   priorityClassName: null
+  # -- Labels for index-gateway
+  labels: {}
+  # -- Annotations for index-gateway
+  annotations: {}
   # -- Labels for index-gateway pods
   podLabels: {}
   # -- Annotations for index-gateway pods
@@ -3216,6 +3677,12 @@ indexGateway:
     sessionAffinity: ""
     # -- Session affinity config for index-gateway Service
     sessionAffinityConfig: {}
+    # -- ipFamilyPolicy for index-gateway Service
+    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
+    ipFamilyPolicy: ""
+    # -- ipFamilies for index-gateway Service
+    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
+    ipFamilies: []
     # -- Adds the appProtocol field to the index-gateway service. This allows index-gateway to work with istio protocol selection.
     appProtocol:
       # -- Set the optional grpc service protocol. Ex: "grpc", "http2" or "https"
@@ -3307,8 +3774,8 @@ indexGateway:
     grpc: ""
   # -- trafficDistribution for index-gateway service
   trafficDistribution: ""
-  # -- UpdateStrategy for the indexGateway StatefulSet.
-  updateStrategy:
+  # -- UpdateStrategy for the index-gateway workload.
+  strategy:
     # -- One of  'OnDelete' or 'RollingUpdate'
     type: RollingUpdate
     # -- Optional for updateStrategy.type=RollingUpdate. See [Partitioned rolling updates](https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#partitions) in the StatefulSet docs for details.
@@ -3331,8 +3798,23 @@ indexGateway:
 
 # -- Configuration for the compactor
 compactor:
+  # -- Enable the component. Requires `loki.deploymentMode` to be set to `Distributed`.
+  enabled: true
+  # -- Kind of compactor deployment. StatefulSet and Deployment are supported.
+  kind: StatefulSet
+  # -- EXPERIMENTAL: Enable creating a Job to recreate the compactor StatefulSet when the compactor configuration is changed.
+  ## Only applicable if `compactor.kind` is StatefulSet. Useful for PVC size changes, which require recreating the StatefulSet.
+  statefulSetRecreateJob:
+    enabled: false
   # -- Number of replicas for the compactor
   replicas: 0
+  # -- UpdateStrategy or Strategy for the compactor.
+  strategy:
+    rollingUpdate:
+      partition: 0
+  # -- PodManagementPolicy for the compactor StatefulSet. Only applicable if `compactor.kind` is StatefulSet.
+  ## OrderedReady and Parallel are supported.
+  podManagementPolicy: Parallel
   # -- hostAliases to add
   hostAliases: []
   #  - ip: 1.2.3.4
@@ -3353,6 +3835,10 @@ compactor:
   command: null
   # -- The name of the PriorityClass for compactor pods
   priorityClassName: null
+  # -- Labels for compactor
+  labels: {}
+  # -- Annotations for compactor
+  annotations: {}
   # -- Labels for compactor pods
   podLabels: {}
   # -- Annotations for compactor pods
@@ -3391,6 +3877,12 @@ compactor:
     sessionAffinity: ""
     # -- Session affinity config for compactor Service
     sessionAffinityConfig: {}
+    # -- ipFamilyPolicy for compactor Service
+    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
+    ipFamilyPolicy: ""
+    # -- ipFamilies for compactor Service
+    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
+    ipFamilies: []
     # -- Adds the appProtocol field to the compactor service. This allows compactor to work with istio protocol selection.
     appProtocol:
       # -- Set the optional grpc service protocol. Ex: "grpc", "http2" or "https"
@@ -3430,7 +3922,34 @@ compactor:
   persistence:
     # -- Enable creating PVCs for the compactor
     enabled: false
-    # -- List of the compactor PVCs
+    # -- Storage type for the compactor. pvc and ephemeral are supported.
+    type: pvc
+    # -- Storage class to be used.
+    # If defined, storageClassName: <storageClass>.
+    # If set to "-", storageClassName: "", which disables dynamic provisioning.
+    # If empty or set to null, no storageClassName spec is
+    # set, choosing the default provisioner (gp2 on AWS, standard on GKE, AWS, and OpenStack).
+    storageClass: null
+    # -- Set access modes on the PersistentVolumeClaim
+    accessModes:
+      - ReadWriteOnce
+    # -- Size of persistent disk
+    size: 10Gi
+    # -- Size of persistent disk
+    # -- Volume attributes class name to be used.
+    # If empty or set to null, no volumeAttributesClassName spec is set.
+    # Requires Kubernetes 1.31
+    volumeAttributesClassName: null
+    # -- Annotations for the generated volumeClaimTemplate.
+    annotations: {}
+    # -- Labels for the generated volumeClaimTemplate.
+    labels: {}
+    # -- Selector for the generated volumeClaimTemplate.
+    selector: null
+    # -- Parameters used for the `data` volume when volumeClaimEnabled if false
+    dataVolumeParameters:
+      emptyDir: {}
+    # -- List of the compactor PVCs. Deprecated in favor of `compactor.persistence.dataVolumeParameters` and `compactor.persistence.size`.
     # @notationType -- list
     claims:
       - name: data
@@ -3473,6 +3992,8 @@ compactor:
 
 # -- Configuration for the bloom-gateway
 bloomGateway:
+  # -- Enable the component. Requires `loki.deploymentMode` to be set to `Distributed`.
+  enabled: false
   # -- Number of replicas for the bloom-gateway
   replicas: 0
   # -- hostAliases to add
@@ -3530,6 +4051,12 @@ bloomGateway:
     sessionAffinity: ""
     # -- Session affinity config for bloom-gateway Service
     sessionAffinityConfig: {}
+    # -- ipFamilyPolicy for bloom-gateway Service
+    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
+    ipFamilyPolicy: ""
+    # -- ipFamilies for bloom-gateway Service
+    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
+    ipFamilies: []
     # -- Adds the appProtocol field to the bloom-gateway service. This allows bloom-gateway to work with istio protocol selection.
     appProtocol:
       # -- Set the optional grpc service protocol. Ex: "grpc", "http2" or "https"
@@ -3623,6 +4150,8 @@ bloomGateway:
 
 # -- Configuration for the bloom-planner
 bloomPlanner:
+  # -- Enable the component. Requires `loki.deploymentMode` to be set to `Distributed`.
+  enabled: false
   # -- Number of replicas for the bloom-planner
   replicas: 0
   # -- hostAliases to add
@@ -3680,6 +4209,12 @@ bloomPlanner:
     sessionAffinity: ""
     # -- Session affinity config for bloom-planner Service
     sessionAffinityConfig: {}
+    # -- ipFamilyPolicy for bloom-planner Service
+    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
+    ipFamilyPolicy: ""
+    # -- ipFamilies for bloom-planner Service
+    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
+    ipFamilies: []
     # -- Adds the appProtocol field to the bloom-planner service. This allows bloom-planner to work with istio protocol selection.
     appProtocol:
       # -- Set the optional grpc service protocol. Ex: "grpc", "http2" or "https"
@@ -3773,6 +4308,14 @@ bloomPlanner:
 
 # -- Configuration for the bloom-builder
 bloomBuilder:
+  # -- Enable the component. Requires `loki.deploymentMode` to be set to `Distributed`.
+  enabled: false
+  # -- Kind of compactor deployment. StatefulSet and Deployment are supported.
+  kind: Deployment
+  # -- Enable creating a Job to recreate the compactor StatefulSet when the compactor configuration is changed.
+  ## Only applicable if `compactor.kind` is StatefulSet. Useful for PVC size changes, which require recreating the StatefulSet.
+  statefulSetRecreateJob:
+    enabled: false
   # -- Number of replicas for the bloom-builder
   replicas: 0
   # -- hostAliases to add
@@ -3804,6 +4347,7 @@ bloomBuilder:
     #     target:
     #       type: AverageValue
     #       averageValue: 100
+    # -- HPA behavior configuration, passed directly as a K8s HPA behavior object.
     behavior:
       # -- Enable autoscaling behaviours
       enabled: false
@@ -3820,8 +4364,9 @@ bloomBuilder:
     minReplicas: 1
     # -- Maximum replicas for KEDA autoscaling
     maxReplicas: 3
-    # -- Period to wait after the last trigger reported active before scaling the resource back to 0 (seconds)
-    cooldownPeriod: 300
+    # -- Period to wait after the last trigger reported active before scaling the resource back to 0 (seconds).
+    # Defaults to defaults.kedaAutoscaling.cooldownPeriod if not set.
+    cooldownPeriod: null
     # -- Fallback configuration for KEDA ScaledObject. Applied when the trigger metric cannot be retrieved.
     # Ref: https://keda.sh/docs/latest/reference/scaledobject-spec/#fallback
     fallback: {}
@@ -3842,6 +4387,10 @@ bloomBuilder:
   command: null
   # -- The name of the PriorityClass for bloom-builder pods
   priorityClassName: null
+  # -- Labels for bloom-builder
+  labels: {}
+  # -- Annotations for bloom-builder
+  annotations: {}
   # -- Labels for bloom-builder pods
   podLabels: {}
   # -- Annotations for bloom-builder pods
@@ -3865,6 +4414,12 @@ bloomBuilder:
     sessionAffinity: ""
     # -- Session affinity config for bloom-builder Service
     sessionAffinityConfig: {}
+    # -- ipFamilyPolicy for bloom-builder Service
+    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
+    ipFamilyPolicy: ""
+    # -- ipFamilies for bloom-builder Service
+    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
+    ipFamilies: []
     # -- Adds the appProtocol field to the bloom-builder service. This allows bloom-builder to work with istio protocol selection.
     appProtocol:
       # -- Set the optional grpc service protocol. Ex: "grpc", "http2" or "https"
@@ -3927,29 +4482,30 @@ bloomBuilder:
       maxSurge: 0
       maxUnavailable: 1
   persistence:
-    ephemeralDataVolume:
-      # -- Enable generic ephemeral volume-backed storage for the bloom-builder `data` volume.
-      enabled: false
-      # -- Set access modes on the generated volumeClaimTemplate.
-      accessModes:
-        - ReadWriteOnce
-      # -- Size of the generated volumeClaimTemplate.
-      size: 10Gi
-      # -- Storage class to be used for the generated volumeClaimTemplate.
-      # If defined, storageClassName: <storageClass>.
-      # If set to "-", storageClassName: "", which disables dynamic provisioning.
-      # If empty or set to null, no storageClassName spec is set, choosing the default provisioner.
-      storageClass: null
-      # -- Volume attributes class name to be used for the generated volumeClaimTemplate.
-      # If empty or set to null, no volumeAttributesClassName spec is set.
-      # Requires Kubernetes 1.31
-      volumeAttributesClassName: null
-      # -- Selector for the generated volumeClaimTemplate.
-      selector: null
-      # -- Annotations for the generated volumeClaimTemplate.
-      annotations: {}
-      # -- Labels for the generated volumeClaimTemplate.
-      labels: {}
+    # -- Enable generic ephemeral volume-backed storage for the bloom-builder `data` volume.
+    enabled: false
+    # -- Storage type for the bloom-builder. pvc and ephemeral are supported.
+    type: ephemeral
+    # -- Set access modes on the generated volumeClaimTemplate.
+    accessModes:
+      - ReadWriteOnce
+    # -- Size of the generated volumeClaimTemplate.
+    size: 10Gi
+    # -- Storage class to be used for the generated volumeClaimTemplate.
+    # If defined, storageClassName: <storageClass>.
+    # If set to "-", storageClassName: "", which disables dynamic provisioning.
+    # If empty or set to null, no storageClassName spec is set, choosing the default provisioner.
+    storageClass: null
+    # -- Volume attributes class name to be used for the generated volumeClaimTemplate.
+    # If empty or set to null, no volumeAttributesClassName spec is set.
+    # Requires Kubernetes 1.31
+    volumeAttributesClassName: null
+    # -- Selector for the generated volumeClaimTemplate.
+    selector: null
+    # -- Annotations for the generated volumeClaimTemplate.
+    annotations: {}
+    # -- Labels for the generated volumeClaimTemplate.
+    labels: {}
   serviceAccount:
     # -- Specifies whether a ServiceAccount should be created
     create: false
@@ -3967,8 +4523,20 @@ bloomBuilder:
 
 # -- Configuration for the pattern ingester
 patternIngester:
+  # -- Enable the component. Requires `loki.deploymentMode` to be set to `Distributed`.
+  enabled: false
+  # -- Kind of compactor deployment. StatefulSet and Deployment are supported.
+  kind: StatefulSet
+  # -- EXPERIMENTAL: Enable creating a Job to recreate the compactor StatefulSet when the compactor configuration is changed.
+  ## Only applicable if `compactor.kind` is StatefulSet. Useful for PVC size changes, which require recreating the StatefulSet.
+  statefulSetRecreateJob:
+    enabled: false
   # -- Number of replicas for the pattern ingester
   replicas: 0
+  # -- UpdateStrategy or Strategy for the pattern ingester.
+  strategy:
+    rollingUpdate:
+      partition: 0
   # -- DNSConfig for pattern ingester pods
   dnsConfig: {}
   # -- hostAliases to add
@@ -3989,6 +4557,10 @@ patternIngester:
   command: null
   # -- The name of the PriorityClass for pattern ingester pods
   priorityClassName: null
+  # -- Labels for pattern ingester
+  labels: {}
+  # -- Annotations for pattern ingester
+  annotations: {}
   # -- Labels for pattern ingester pods
   podLabels: {}
   # -- Annotations for pattern ingester pods
@@ -4110,6 +4682,12 @@ patternIngester:
 ruler:
   # -- The ruler component is optional and can be disabled if desired.
   enabled: true
+  # -- Kind of ruler deployment. StatefulSet and Deployment are supported.
+  kind: StatefulSet
+  # -- EXPERIMENTAL: Enable creating a Job to recreate the ruler StatefulSet when the ruler configuration is changed.
+  ## Only applicable if `ruler.kind` is StatefulSet. Useful for PVC size changes, which require recreating the StatefulSet.
+  statefulSetRecreateJob:
+    enabled: false
   # -- Whether to enable the rules sidecar
   sidecar: false
   # -- Number of replicas for the ruler
@@ -4132,7 +4710,11 @@ ruler:
   command: null
   # -- The name of the PriorityClass for ruler pods
   priorityClassName: null
-  # -- Labels for compactor pods
+  # -- Labels for ruler
+  labels: {}
+  # -- Annotations for ruler
+  annotations: {}
+  # -- Labels for ruler pods
   podLabels: {}
   # -- Annotations for ruler pods
   podAnnotations: {}
@@ -4155,6 +4737,12 @@ ruler:
     sessionAffinity: ""
     # -- Session affinity config for ruler Service
     sessionAffinityConfig: {}
+    # -- ipFamilyPolicy for ruler Service
+    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
+    ipFamilyPolicy: ""
+    # -- ipFamilies for ruler Service
+    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
+    ipFamilies: []
     # -- Adds the appProtocol field to the ruler service. This allows ruler to work with istio protocol selection.
     appProtocol:
       # -- Set the optional grpc service protocol. Ex: "grpc", "http2" or "https"
@@ -4323,6 +4911,8 @@ ruler:
 overridesExporter:
   # -- The overrides-exporter component is optional and can be disabled if desired.
   enabled: false
+  # -- Kind of backend workload. StatefulSet and Deployment are supported.
+  kind: Deployment
   # -- Number of replicas for the overrides-exporter
   replicas: 0
   # -- DNSConfig for overrides-exporter
@@ -4368,6 +4958,12 @@ overridesExporter:
     sessionAffinity: ""
     # -- Session affinity config for overrides-exporter Service
     sessionAffinityConfig: {}
+    # -- ipFamilyPolicy for overrides-exporter Service
+    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
+    ipFamilyPolicy: ""
+    # -- ipFamilies for overrides-exporter Service
+    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
+    ipFamilies: []
     # -- Adds the appProtocol field to the overrides-exporter service. This allows overrides-exporter to work with istio protocol selection.
     appProtocol:
       # -- Set the optional grpc service protocol. Ex: "grpc", "http2" or "https"
@@ -4450,7 +5046,7 @@ memcached:
     # -- Memcached Docker image repository
     repository: memcached
     # -- Memcached Docker image tag
-    tag: 1.6.41-alpine
+    tag: 1.6.42-alpine
     # -- Memcached Docker image pull policy
     pullPolicy: IfNotPresent
   # -- The SecurityContext override for memcached pods
@@ -4969,7 +5565,18 @@ rollout_operator:
     runAsNonRoot: true
     seccompProfile:
       type: RuntimeDefault
-# -- Configuration for the minio subchart
+  webhooks:
+    # -- Enable the rollout-operator webhooks. See https://github.com/grafana/rollout-operator/#webhooks.
+    # Note that the webhooks require custom resource definitions. If upgrading, manually apply the files in the `crds` directory.
+    enabled: true
+    # -- Timeout in seconds for the prepare-downscale mutating webhook. Must be between 1 and 30.
+    timeoutSeconds: 10
+    # -- Validating and mutating webhook failure policy. `Ignore` or `Fail`.
+    failurePolicy: "Ignore"
+# -- Ignore MinIO deprecation validation when `minio.enabled=true`. This is a temporary compatibility escape hatch.
+ignoreMinioDeprecation: false
+
+# -- Configuration for the minio subchart (deprecated)
 minio:
   enabled: false
   replicas: 1
@@ -5043,7 +5650,7 @@ sidecar:
     # -- The Docker registry and image for the k8s sidecar
     repository: kiwigrid/k8s-sidecar
     # -- Docker image tag
-    tag: 2.6.0
+    tag: 2.7.3
     # -- Docker image sha. If empty, no sha will be used
     sha: ""
     # -- Docker image pull policy
@@ -5072,9 +5679,25 @@ sidecar:
   # -- Ensure that rule files aren't conflicting and being overwritten by prefixing their name with the namespace they are defined in.
   enableUniqueFilenames: false
   # -- Readiness probe definition. Probe is disabled on the sidecar by default.
-  readinessProbe: {}
+  readinessProbe:
+    httpGet:
+      path: /healthz
+      port: http-sidecar
+    periodSeconds: 10
+    initialDelaySeconds: 3
+    successThreshold: 1
+    failureThreshold: 3
+    timeoutSeconds: 1
   # -- Liveness probe definition. Probe is disabled on the sidecar by default.
-  livenessProbe: {}
+  livenessProbe:
+    httpGet:
+      path: /healthz
+      port: http-sidecar
+    periodSeconds: 30
+    initialDelaySeconds: 30
+    successThreshold: 1
+    failureThreshold: 3
+    timeoutSeconds: 1
   # -- Startup probe definition. Probe is disabled on the sidecar by default.
   startupProbe: {}
   rules:
@@ -5111,6 +5734,8 @@ sidecar:
     watchClientTimeout: 60
     # -- Log level of the sidecar container.
     logLevel: INFO
+    # -- Health Server port of the sidecar container.
+    healthPort: 8080
 
 # -- Monitoring section determines which monitoring features to enable
 monitoring:
@@ -5252,6 +5877,12 @@ tableManager:
     sessionAffinity: ""
     # -- Session affinity config for table-manager Service
     sessionAffinityConfig: {}
+    # -- ipFamilyPolicy for table-manager Service
+    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
+    ipFamilyPolicy: ""
+    # -- ipFamilies for table-manager Service
+    # Ref: https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services
+    ipFamilies: []
     # -- Adds the appProtocol field to the table-manager service. This allows table-manager to work with istio protocol selection.
     appProtocol:
       # -- Set the optional grpc service protocol. Ex: "grpc", "http2" or "https"

@@ -21,6 +21,8 @@ spec:
   {{- if and (eq "LoadBalancer" .Values.gateway.service.type) .Values.gateway.service.loadBalancerIP }}
   loadBalancerIP: {{ .Values.gateway.service.loadBalancerIP }}
   {{- end }}
+  ipFamilies: {{ .Values.tempo.service.ipFamilies }}
+  ipFamilyPolicy: {{ .Values.tempo.service.ipFamilyPolicy }}
   ports:
     - name: http-metrics
       port: {{ .Values.gateway.service.port }}
@@ -34,6 +36,9 @@ spec:
       port: {{ .Values.traces.otlp.grpc.port }}
       targetPort: grpc-otlp
       protocol: TCP
+      {{- if and (eq "NodePort" .Values.gateway.service.type) .Values.gateway.service.grpcNodePort }}
+      nodePort: {{ .Values.gateway.service.grpcNodePort }}
+      {{- end }}
     {{- end }}
     {{ range .Values.gateway.service.additionalPorts }}
     - name: {{ .name }}

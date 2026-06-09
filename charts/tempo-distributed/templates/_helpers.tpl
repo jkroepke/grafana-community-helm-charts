@@ -7,6 +7,34 @@ Expand the name of the chart.
 {{- end -}}
 
 {{/*
+Safely convert a value to int with fallback.
+
+Accepts int, float64 (e.g. 15.0), or numeric strings (e.g. "15").
+Falls back to default for invalid values (e.g. "abc", nil).
+
+Usage:
+  {{ include "tempo.safeInt" (dict "value" $v "default" 30) }}
+
+Args:
+  value: input value to convert
+  default: fallback integer if value is invalid
+*/}}
+{{- define "tempo.safeInt" -}}
+{{- $v := index . "value" -}}
+{{- $default := index . "default" -}}
+
+{{- if or
+  (kindIs "int" $v)
+  (kindIs "float64" $v)
+  (and (kindIs "string" $v) (eq (toString (toString $v | int)) $v))
+}}
+  {{- toString $v | int -}}
+{{- else -}}
+  {{- $default -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 Create a default fully qualified app name.
 We truncate at 63 chars because some Kubernetes name fields are limited to this (by the DNS naming spec).
 If release name contains chart name it will be used as a full name.
@@ -28,7 +56,7 @@ If release name contains chart name it will be used as a full name.
 Docker image selector for Tempo. Hierarchy based on global, component, and tempo values.
 */}}
 {{- define "tempo.tempoImage" -}}
-{{- $registry := coalesce .global.registry .component.registry .tempo.registry -}}
+{{- $registry := coalesce .component.registry .tempo.registry .global.registry -}}
 {{- $repository := coalesce .component.repository .tempo.repository -}}
 {{- $tag := coalesce .component.tag .tempo.tag .defaultVersion | toString -}}
 {{- printf "%s/%s:%s" $registry $repository $tag -}}
@@ -140,17 +168,6 @@ Create the name of the service account to use
 {{- else -}}
     {{ default "default" .Values.serviceAccount.name }}
 {{- end -}}
-{{- end -}}
-
-{{/*
-Return the appropriate apiVersion for HorizontalPodAutoscaler.
-*/}}
-{{- define "tempo.hpa.apiVersion" -}}
-  {{- if and (.Capabilities.APIVersions.Has "autoscaling/v2") (semverCompare ">=1.23-0" .Capabilities.KubeVersion.Version) -}}
-    {{- print "autoscaling/v2" -}}
-  {{- else -}}
-    {{- print "autoscaling/v2beta1" -}}
-  {{- end -}}
 {{- end -}}
 
 {{/*
@@ -475,7 +492,7 @@ spec:
             - pvc
             - --namespace={{ $newStatefulSet.metadata.namespace }}
             - {{ printf "%s-%s-%d" $template $newStatefulSet.metadata.name $index }}
-            - --type='json'
+            - --type=json
             - '-p=[{"op": "replace", "path": "/spec/resources/requests/storage", "value": "{{ $size }}"}]'
           {{- end }}
         {{- end }}
@@ -516,7 +533,7 @@ rules:
       - delete
   {{- if $templates }}
   - apiGroups:
-      - v1
+      - ""
     resources:
       - persistentvolumeclaims
     resourceNames:
@@ -527,6 +544,7 @@ rules:
     {{- end }}
     verbs:
       - patch
+      - get
   {{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1

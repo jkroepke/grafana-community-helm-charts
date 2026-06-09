@@ -73,6 +73,7 @@ ingester:
 sidecar:
   rules:
     enabled: true
+ignoreMinioDeprecation: true
 minio:
   enabled: true
 read:
@@ -84,6 +85,7 @@ backend:
 ruler:
   replicas: 2
   affinity: null
+  sidecar: true
   directories:
     fake:
       alerts.yaml: |
@@ -99,6 +101,12 @@ memcached:
   replicas: 1
 compactor:
   replicas: 1
+  persistence:
+    enabled: true
+    size: 20Gi
+    claims: []
+  statefulSetRecreateJob:
+    enabled: true
 indexGateway:
   replicas: 2
   affinity: null

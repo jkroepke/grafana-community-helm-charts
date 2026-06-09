@@ -18,6 +18,7 @@ Params: .component (values object), .name (string for error message)
   {{- $kind := .component.kind | default .kind | default "StatefulSet" }}
   {{- $ctx := .ctx }}
   {{- $component := .component }}
+  {{- $targetName := .targetName }}
   {{- $suffix := .suffix | default "" }}
   {{- with $ctx }}
 ---
@@ -33,11 +34,21 @@ spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: {{ $kind }}
-    name: {{ include "loki.resourceName" (dict "ctx" . "component" $target "suffix" $suffix) }}
+    name: "{{ $targetName | default (include "loki.workloadResourceName" (dict "ctx" $ctx "component" $target "componentValues" $component "suffix" $suffix)) }}"
   minReplicaCount: {{ $component.kedaAutoscaling.minReplicas }}
   maxReplicaCount: {{ $component.kedaAutoscaling.maxReplicas }}
-  pollingInterval: {{ coalesce $component.kedaAutoscaling.pollingInterval .Values.defaults.kedaAutoscaling.pollingInterval }}
-  cooldownPeriod: {{ $component.kedaAutoscaling.cooldownPeriod }}
+  pollingInterval: {{
+    include "loki.safeInt" (dict
+      "value" $component.kedaAutoscaling.pollingInterval
+      "default" .Values.defaults.kedaAutoscaling.pollingInterval
+    )
+  }}
+  cooldownPeriod: {{
+  include "loki.safeInt" (dict
+    "value" $component.kedaAutoscaling.cooldownPeriod
+    "default" .Values.defaults.kedaAutoscaling.cooldownPeriod
+  )
+  }}
   {{- with $component.kedaAutoscaling.fallback }}
   fallback:
     {{- toYaml . | nindent 4 }}
