@@ -422,7 +422,12 @@ jobs:
       - check-generated-files
       - super-linter
     if: >-
-      github.event.pull_request.head.repo.full_name == github.repository
+      always()
+      && needs.chart-testing.result == 'success'
+      && (needs.integration-tests.result == 'success' || needs.integration-tests.result == 'skipped')
+      && needs.check-generated-files.result == 'success'
+      && needs.super-linter.result == 'success'
+      && github.event.pull_request.head.repo.full_name == github.repository
       && contains(github.event.pull_request.labels.*.name, 'dependencies/auto-merge')
       && (github.event.pull_request.user.login  == 'renovate[bot]' || github.event.pull_request.user.login  == 'helm-charts-renovate-helper-app[bot]')
     steps:
