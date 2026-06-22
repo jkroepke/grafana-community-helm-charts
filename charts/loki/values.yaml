@@ -5653,6 +5653,20 @@ monitoring:
   # Supports Helm templating.
   appInstanceLabelValue: '{{ include "loki.fullname" . }}'
 
+  multiCluster:
+    # -- When enabled, shows the cluster variable in dashboards.
+    # If clusterName is also set, the chart adds 'cluster' labels to scraped
+    # metrics, recording rules, and alerts, and includes 'cluster' in recording
+    # rule aggregations. If clusterName is left empty, only dashboard changes
+    # are applied — use this when an external tool (e.g. Grafana Alloy) manages
+    # cluster label injection and PromQL rewriting.
+    enabled: false
+    # -- Value for the 'cluster' label. Supports Helm templating.
+    # When empty, recording rules and alerts are not modified — only dashboards
+    # show the cluster variable.
+    # e.g. clusterName: '{{ .Values.global.clusterName }}'
+    clusterName: ""
+
   # Dashboards for monitoring Loki
   dashboards:
     # -- If enabled, create configmap resources with dashboards for monitoring Loki
@@ -5662,16 +5676,6 @@ monitoring:
     # -- Labels for the dashboards ConfigMap resources
     labels:
       grafana_dashboard: "1"
-    multiCluster:
-      # -- When enabled, adds a 'cluster' label to scraped metrics and recording
-      # rules, and shows the cluster variable in dashboards. Intended for
-      # environments with multiple Kubernetes clusters. Set clusterName to the
-      # name of the Kubernetes cluster this Loki release is running in.
-      enabled: false
-      # -- Value for the 'cluster' label. Supports Helm templating.
-      # e.g. clusterName: '{{ .Values.global.clusterName }}'
-      clusterName: ""
-
     # -- Timezone for the default dashboards
     defaultDashboardsTimezone: utc
 

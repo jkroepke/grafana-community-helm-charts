@@ -343,6 +343,18 @@
         "appInstanceLabelValue": {
           "type": "string"
         },
+        "multiCluster": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "clusterName": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
         "dashboards": {
           "type": "object",
           "properties": {
@@ -360,18 +372,6 @@
               "additionalProperties": {
                 "type": "string"
               }
-            },
-            "multiCluster": {
-              "type": "object",
-              "properties": {
-                "enabled": {
-                  "type": "boolean"
-                },
-                "clusterName": {
-                  "type": "string"
-                }
-              },
-              "additionalProperties": false
             },
             "defaultDashboardsTimezone": {
               "type": "string"
